@@ -148,3 +148,9 @@ def actor_net(states, action_spec,
       actions = action_means + action_magnitudes * actions
 
   return actions
+
+@gin.configurable('ddpg_critic_hat_net')
+def critic_hat_net()
+
+@gin.configurable('ddpg_critic_hat_net')
+def critic_hat_net()

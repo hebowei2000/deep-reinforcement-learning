@@ -472,7 +472,7 @@ def intrinsic_distance(states,
     goals = states + goals
   
   upper = tf.reduce_sum(tf.multiply(states - starting_state, goals - starting_state))
-  lower = tf.abs(reduce_sum(tf.multiply(states - starting_state, goals - starting_state)))
+  lower = tf.abs(tf.reduce_sum(tf.multiply(states - starting_state, goals - starting_state)))
   sign = tf.math.divide(upper, lower)
   
   result = tf.multiply(tf.square(tf.math.divide(upper, tf.norm(goals - starting_state, ord=2))), sign)

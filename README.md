@@ -1,3 +1,9 @@
+Copied from *efficient-hrl* by Nachum et al. at https://github.com/tensorflow/models/tree/master/research/efficient-hrl
+
+Working on some improvements.
+
+--------------------------------------------------------------------------
+
 Code for performing Hierarchical RL based on the following publications:
 
 "Data-Efficient Hierarchical Reinforcement Learning" by

@@ -82,7 +82,7 @@ class TFPyEnvironment(tf_py_environment.TFPyEnvironment):
     super(TFPyEnvironment, self).__init__(*args, **kwargs)
 
   def start_collect(self):
-    pass
+    pass # return; 
 
   def current_obs(self):
     time_step = self.current_time_step()

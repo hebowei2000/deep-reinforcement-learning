@@ -538,8 +538,7 @@ class MetaAgentCore(UvfAgentCore):
         clip=True, global_step=global_step)
     return noisy_action_fn
 
-  def actor_loss(self, states, actions, rewards, discounts,
-                 next_states):
+  def actor_loss(self, states, actions, rewards, discounts, next_states):
     """Returns the next action for the state.
 
     Args:

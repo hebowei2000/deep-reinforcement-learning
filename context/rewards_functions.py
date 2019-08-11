@@ -471,14 +471,15 @@ def intrinsic_distance(states,
   if relative_context:
     goals = states + goals
   
-  upper = tf.reduce_sum(tf.multiply(next_states - starting_state, goals - starting_state))
-  lower = tf.abs(reduce_sum(tf.multiply(next_states - starting_state, goals - starting_state)))
+  upper = tf.reduce_sum(tf.multiply(states - starting_state, goals - starting_state))
+  lower = tf.abs(reduce_sum(tf.multiply(states - starting_state, goals - starting_state)))
   sign = tf.math.divide(upper, lower)
   
   result = tf.multiply(tf.square(tf.math.divide(upper, tf.norm(goals - starting_state, ord=2))), sign)
 
-  term_1 = tf.square(tf.norm(next_states - starting_state, 2))
-  return tf.square(term_1 - result)
+  term_1 = tf.square(tf.norm(states - starting_state, 2))
+  term_2=tf.square(tf.math.divide(upper, tf.norm(goals - starting_state, ord=2)))
+  return result-alpha*(term_1-term_2)
 
 
 

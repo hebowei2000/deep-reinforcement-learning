@@ -73,10 +73,10 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
     A collect_experience_op that excute an action and store into the
     replay_buffers
   """
-  tf_env.start_collect()
-  state = tf_env.current_obs()
-  state_repr = state_preprocess(state)
-  action = action_fn(state, context=None)
+  tf_env.start_collect() # no effect
+  state = tf_env.current_obs() # s
+  state_repr = state_preprocess(state) # f(s)
+  action = action_fn(state, context=None) # a
 
   with tf.control_dependencies([state]):
     transition_type, reward, discount = tf_env.step(action)
@@ -213,8 +213,8 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
 
     meta_period = tf.equal(agent.tf_context.t % meta_action_every_n, 1)
     states_var_upd = tf.scatter_update(
-        states_var, (agent.tf_context.t - 1) % meta_action_every_n,
-        next_state)
+    states_var, (agent.tf_context.t - 1) % meta_action_every_n,
+        next_state)                                                               
     state_var_upd = tf.assign(
         state_var,
         tf.cond(meta_period, lambda: next_state, lambda: state_var))
@@ -318,22 +318,26 @@ def train_uvf(train_dir,
               load_path=LOAD_PATH):
   """Train an agent."""
   tf_env = create_maze_env.TFPyEnvironment(environment)
-  observation_spec = [tf_env.observation_spec()]
-  action_spec = [tf_env.action_spec()]
+  observation_spec = [tf_env.observation_spec()] #TODO:
+  action_spec = [tf_env.action_spec()] #TODO:
 
-  max_steps_per_episode = max_steps_per_episode or tf_env.pyenv.max_episode_steps
+  max_steps_per_episode = max_steps_per_episode or tf_env.pyenv.max_episode_steps # environment specification
 
   assert max_steps_per_episode, 'max_steps_per_episode need to be set'
 
   if initial_steps is None:
     initial_steps = initial_episodes * max_steps_per_episode
 
-  if agent_class.ACTION_TYPE == 'discrete':
-    assert False
-  else:
-    assert agent_class.ACTION_TYPE == 'continuous'
 
-  assert agent_class.ACTION_TYPE == meta_agent_class.ACTION_TYPE
+  assert agent_class.ACTION_TYPE == 'continuous'
+  
+  #   agent_class.ACTION_TYPE == 'discrete':
+  #  assert False # quit
+  #else:
+   
+  # must be both continuous
+  assert agent_class.ACTION_TYPE == meta_agent_class.ACTION_TYPE 
+
   with tf.variable_scope('meta_agent'):
     meta_agent = meta_agent_class(
         observation_spec,
@@ -386,11 +390,11 @@ def train_uvf(train_dir,
   tf.summary.histogram('episode_meta_rewards', episode_meta_rewards[1:])
 
   # Create init ops
-  action_fn = uvf_agent.action
-  action_fn = uvf_agent.add_noise_fn(action_fn, global_step=None)
+  action_fn = uvf_agent.action # actor
+  action_fn = uvf_agent.add_noise_fn(action_fn, global_step=None) 
   meta_action_fn = meta_agent.action
   meta_action_fn = meta_agent.add_noise_fn(meta_action_fn, global_step=None)
-  meta_actions_fn = meta_agent.actions
+  meta_actions_fn = meta_agent.actions # returns actor net
   meta_actions_fn = meta_agent.add_noise_fn(meta_actions_fn, global_step=None)
   init_collect_experience_op = collect_experience(
       tf_env,
@@ -497,6 +501,7 @@ def train_uvf(train_dir,
         repr_loss, _, _ = state_preprocess.loss(states, next_states, low_actions, low_states)
         repr_train_op = slim.learning.create_train_op(
             repr_loss,
+            
             repr_optimizer,
             global_step=None,
             update_ops=None,

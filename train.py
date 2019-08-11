@@ -46,7 +46,7 @@ flags.DEFINE_string('goal_sample_strategy', 'sample',
 LOAD_PATH = None
 
 
-def collect_experience(tf_env, agent, meta_agent, state_preprocess,
+def collect_experience(tf_env, agent, meta_agent, state_preprocess, # TODO: starting state
                        replay_buffer, meta_replay_buffer,
                        action_fn, meta_action_fn,
                        environment_steps, num_episodes, num_resets,
@@ -75,6 +75,8 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
   """
   tf_env.start_collect() # no effect
   state = tf_env.current_obs() # s
+  last_batch = meta_replay_buffer.gather(meta_replay_buffer.get_position())
+  starting_state = last_batch[:5][4]
   state_repr = state_preprocess(state) # f(s)
   action = action_fn(state, context=None) # a
 
@@ -158,7 +160,7 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
 
   meta_action_every_n = agent.tf_context.meta_action_every_n
   with tf.control_dependencies(collect_experience_ops):
-    transition = [state, action, reward, discount, next_state]
+    transition = [state, starting_state, action, reward, discount, next_state] #TODO: starting state
 
     meta_action = tf.to_float(
         tf.concat(context, -1))  # Meta agent action is low-level context
@@ -190,7 +192,7 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
       meta_reward = tf.reshape(meta_reward, reward.shape)
 
     reward = 0.1 * meta_reward
-    meta_transition = [state_var, meta_action_var,
+    meta_transition = [state_var, None, meta_action_var,
                        reward_var + reward,
                        discount * (1 - tf.to_float(next_reset_episode_cond)),
                        next_state]
@@ -344,7 +346,7 @@ def train_uvf(train_dir,
         action_spec,
         tf_env,
         debug_summaries=debug_summaries)
-  meta_agent.set_replay(replay=meta_replay_buffer)
+    meta_agent.set_replay(replay=meta_replay_buffer)
 
   with tf.variable_scope('uvf_agent'):
     uvf_agent = agent_class(
@@ -501,7 +503,6 @@ def train_uvf(train_dir,
         repr_loss, _, _ = state_preprocess.loss(states, next_states, low_actions, low_states)
         repr_train_op = slim.learning.create_train_op(
             repr_loss,
-            
             repr_optimizer,
             global_step=None,
             update_ops=None,
@@ -523,10 +524,10 @@ def train_uvf(train_dir,
       merged_next_states = agent.merged_states(next_states, next_contexts)
       if mode == 'nometa':
         context_rewards, context_discounts = agent.compute_rewards(
-            'train', state_reprs, actions, rewards, next_state_reprs, contexts)
+            'train', state_reprs, starting_state, actions, rewards,next_state_reprs, contexts)
       elif mode == 'meta': # Meta-agent uses sum of rewards, not context-specific rewards.
         _, context_discounts = agent.compute_rewards(
-            'train', states, actions, rewards, next_states, contexts)
+            'train', states, starting_state, actions, rewards, next_states, contexts)
         context_rewards = rewards
 
       if agent.gamma_index is not None:

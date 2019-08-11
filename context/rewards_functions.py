@@ -298,7 +298,8 @@ def negative_mse(states,
 
 
 @gin.configurable
-def negative_distance(states,
+def temp_distance(states,
+                      starting_state,
                       actions,
                       rewards,
                       next_states,
@@ -406,7 +407,7 @@ def negative_distance(states,
 
 
 @gin.configurable
-def intrinsic_distance(states,
+def negative_distance(states,
                       starting_state,
                       actions,
                       rewards,

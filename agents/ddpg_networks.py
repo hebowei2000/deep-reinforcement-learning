@@ -150,7 +150,86 @@ def actor_net(states, action_spec,
   return actions
 
 @gin.configurable('ddpg_critic_hat_net')
-def critic_hat_net()
+def critic_hat_net(states, next_states,
+               for_critic_hat_loss=False,
+               num_reward_dims=1,
+               states_hat_hidden_layers=(400,),
+               next_states_hat_hidden_layers=None,
+               joint_hat_hidden_layers=(300,),
+               weight_decay=0.0001,
+               normalizer_fn=None,
+               activation_fn=tf.nn.relu,
+               zero_obs=False,
+               images=False):
+  with slim.arg_scope(
+                [slim.fully_connected],
+                activation_fn=activation_fn,
+                normalizer_fn=normalizer_fn,
+                weights_regularizer=slim.l2_regularizer(weight_decay),
+                weights_initializer=slim.variance_scaling_initializer(
+                    factor=1.0/3.0, mode='FAN_IN', uniform=True)):
+                    orig_states = tf.to_float(states)
+                    #states = tf.to_float(states)
+                    states = tf.concat([tf.to_float(states), tf.to_float(next_states)], -1)  #TD3
+                    if images or zero_obs:
+                      states *= tf.constant([0.0] * 2 + [1.0] * (states.shape[1] - 2))  #LALA
+                    next_states = tf.to_float(next_states)
+                    if states_hat_hidden_layers:
+                      states = slim.stack(states, slim.fully_connected, states_hat_hidden_layers,
+                                          scope='states')
+                    if next_states_hidden_layers:
+                      next_states = slim.stack(actions, slim.fully_connected, next_states_hidden_layers,
+                                           scope='next_states')
+                    joint = tf.concat([states, next_states], 1)
+                    if joint_hat_hidden_layers:
+                      joint = slim.stack(joint, slim.fully_connected, joint_hat_hidden_layers,
+                                         scope='joint')
+  with slim.arg_scope([slim.fully_connected],
+                         weights_regularizer=None,
+                          weights_initializer=tf.random_uniform_initializer(
+                          minval=-0.003, maxval=0.003)):
+                      value = slim.fully_connected(joint, num_reward_dims,
+                                                   activation_fn=None,
+                                                   normalizer_fn=None,
+                                                   scope='q_hat_value')
+                    if num_reward_dims == 1:
+                      value = tf.reshape(value, [-1])
+                    if not for_critic_hat_loss and num_reward_dims > 1:
+                      value = tf.reduce_sum(
+                          value * tf.abs(orig_states[:, -num_reward_dims:]), -1)
+                  return value
+          
+               
 
-@gin.configurable('ddpg_critic_hat_net')
-def critic_hat_net()
+
+
+
+
+
+@gin.configurable('ddpg_actor_hat_net')
+def next_states_hat_net(states, next_states_spec,
+              hidden_layers=(400, 300),
+              normalizer_fn=None,
+              activation_fn=tf.nn.relu,
+              zero_obs=False,
+              images=False):
+              states = tf.to_float(states)
+              orig_states = states
+              if images or zero_obs:  # Zero-out x, y position. Hacky.
+                states *= tf.constant([0.0] * 2 + [1.0] * (states.shape[1] - 2))
+              if hidden_layers:
+                states = slim.stack(states, slim.fully_connected, hidden_layers,
+                                    scope='states')
+  with slim.arg_scope([slim.fully_connected],
+                      weights_initializer=tf.random_uniform_initializer(
+                      minval=-0.003, maxval=0.003)):
+                next_states = slim.fully_connected(states,
+                                               next_states_spec.shape.num_elements(),
+                                               scope='next_states',
+                                               normalizer_fn=None,
+                                               activation_fn=tf.nn.tanh)
+                next_states_means = (next_states_spec.maximum + next_states_spec.minimum) / 2.0
+                next_states_magnitudes = (next_states_spec.maximum - next_states_spec.minimum) / 2.0
+                next_states = next_states_means + next_states_magnitudes * next_states
+          
+            return next_states

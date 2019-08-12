@@ -136,6 +136,10 @@ class DdpgAgent(object):
         self.ACTOR_NET_SCOPE, actor_net, create_scope_now_=True)
     self._critic_net = tf.make_template(
         self.CRITIC_NET_SCOPE, critic_net, create_scope_now_=True)
+    self._actor_hat_net = tf.make_template(
+          self.ACTOR_HAT_NET_SCOPE, actor_hat_net, create_scope_now_=True)
+     self._critic_hat_net = tf.make_template(
+          self.CRITIC_HAT_NET_SCOPE, critic_hat_net, create_scope_now_=True)
     self._target_actor_net = tf.make_template(
         self.TARGET_ACTOR_NET_SCOPE, actor_net, create_scope_now_=True)
     self._target_critic_net = tf.make_template(
@@ -151,7 +155,7 @@ class DdpgAgent(object):
 
   def _batch_state(self, state):
     """Convert state to a batched state.
-
+    states_hat_hidden_layers
     Args:
       state: Either a list/tuple with an state tensor [num_state_dims].
     Returns:

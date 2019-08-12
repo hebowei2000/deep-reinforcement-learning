@@ -149,8 +149,8 @@ def actor_net(states, action_spec,
 
   return actions
 
-@gin.configurable('ddpg_critic_hat_net')
-def critic_hat_net()
+#@gin.configurable('ddpg_critic_hat_net')
+#def critic_hat_net()
 
-@gin.configurable('ddpg_critic_hat_net')
-def critic_hat_net()
+#@gin.configurable('ddpg_critic_hat_net')
+#def critic_hat_net()

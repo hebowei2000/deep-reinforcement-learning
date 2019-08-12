@@ -80,15 +80,17 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
   #starting_state = tf_env.current_obs()
   state_repr = state_preprocess(state) # f(s)
   action = action_fn(state, context=None) # a
-
+  
   with tf.control_dependencies([starting_state, state]):
     transition_type, reward, discount = tf_env.step(action)  # takes step and enters new state
-  
+    
   if meta_replay_buffer.get_counter() > 0:
     last_batch = meta_replay_buffer.gather(meta_replay_buffer.get_position())
     states, actions, rewards, discounts, next_states = last_batch[:5]
     starting_state = tf.identity(next_states)
-
+      
+  starting_state_repr = state_preprocess(starting_state)
+  
   def increment_step():
     return environment_steps.assign_add(1)
 
@@ -146,6 +148,7 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
   increment_op = tf.group(increment_step_op, increment_episode_op,
                           increment_reset_op)
   
+  # observe next state & repr
   with tf.control_dependencies([increment_op, reward, discount]):
     next_state = tf_env.current_obs()
     next_state_repr = state_preprocess(next_state)
@@ -168,7 +171,7 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
       collect_experience_ops = agent.cond_begin_episode_op(
           tf.logical_not(reset_episode_cond),
           [state, starting_state, action, reward, next_state,
-           state_repr, next_state_repr],
+           state_repr, starting_state_repr, next_state_repr],
           mode='explore', meta_action_fn=meta_action_fn)
       context_reward, meta_reward = collect_experience_ops
       collect_experience_ops = list(collect_experience_ops)

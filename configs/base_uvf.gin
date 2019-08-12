@@ -43,17 +43,17 @@ meta/ddpg_actor_net.zero_obs = False
 meta/ddpg_actor_net.images = %IMAGES
 
 
-#actor_hat_net
-ACTOR_HAT_HIDDEN_SIZE_1 = 300
-ACTOR_HAT_HIDDEN_SIZE_2 = 300
-agent/ddpg_actor_hat_net.hidden_layers = (%ACTOR_HAT_HIDDEN_SIZE_1, %ACTOR_HAT_HIDDEN_SIZE_2)
-agent/ddpg_actor_hat_net.activation_fn = @tf.nn.relu
-agent/ddpg_actor_hat_net.zero_obs = %ZERO_OBS
-agent/ddpg_actor_hat_net.images = %IMAGES
-meta/ddpg_actor_hat_net.hidden_layers = (%ACTOR_HAT_HIDDEN_SIZE_1, %ACTOR_HAT_HIDDEN_SIZE_2)
-meta/ddpg_actor_hat_net.activation_fn = @tf.nn.relu
-meta/ddpg_actor_hat_net.zero_obs = False
-meta/ddpg_actor_hat_net.images = %IMAGES
+# #actor_hat_net
+# ACTOR_HAT_HIDDEN_SIZE_1 = 300
+# ACTOR_HAT_HIDDEN_SIZE_2 = 300
+# agent/ddpg_actor_hat_net.hidden_layers = (%ACTOR_HAT_HIDDEN_SIZE_1, %ACTOR_HAT_HIDDEN_SIZE_2)
+# agent/ddpg_actor_hat_net.activation_fn = @tf.nn.relu
+# agent/ddpg_actor_hat_net.zero_obs = %ZERO_OBS
+# agent/ddpg_actor_hat_net.images = %IMAGES
+# meta/ddpg_actor_hat_net.hidden_layers = (%ACTOR_HAT_HIDDEN_SIZE_1, %ACTOR_HAT_HIDDEN_SIZE_2)
+# meta/ddpg_actor_hat_net.activation_fn = @tf.nn.relu
+# meta/ddpg_actor_hat_net.zero_obs = False
+# meta/ddpg_actor_hat_net.images = %IMAGES
 
 
 
@@ -75,23 +75,23 @@ meta/ddpg_critic_net.activation_fn = @tf.nn.relu
 meta/ddpg_critic_net.zero_obs = False
 meta/ddpg_critic_net.images = %IMAGES
 
-# critic_hat_net
-CRITIC_HAT_HIDDEN_SIZE_1 = 300
-CRITIC_HAT_HIDDEN_SIZE_2 = 300
-agent/ddpg_critic_hat_net.states_hat_hidden_layers = (%CRITIC_HAT_HIDDEN_SIZE_1,)
-agent/ddpg_critic_hat_net.actions_hat_hidden_layers = None
-agent/ddpg_critic_hat_net.joint_hidden_layers = (%CRITIC_HAT_HIDDEN_SIZE_2,)
-agent/ddpg_critic_hat_net.weight_decay = 0.0
-agent/ddpg_critic_hat_net.activation_fn = @tf.nn.relu
-agent/ddpg_critic_hat_net.zero_obs = %ZERO_OBS
-agent/ddpg_critic_hat_net.images = %IMAGES
-meta/ddpg_critic_hat_net.states_hat_hidden_layers = (%CRITIC_HAT_HIDDEN_SIZE_1,)
-meta/ddpg_critic_hat_net.actions_hat_hidden_layers = None
-meta/ddpg_critic_hat_net.joint_hidden_layers = (%CRITIC_HAT_HIDDEN_SIZE_2,)
-meta/ddpg_critic_hat_net.weight_decay = 0.0
-meta/ddpg_critic_hat_net.activation_fn = @tf.nn.relu
-meta/ddpg_critic_hat_net.zero_obs = False
-meta/ddpg_critic_hat_net.images = %IMAGES
+# # critic_hat_net
+# CRITIC_HAT_HIDDEN_SIZE_1 = 300
+# CRITIC_HAT_HIDDEN_SIZE_2 = 300
+# agent/ddpg_critic_hat_net.states_hat_hidden_layers = (%CRITIC_HAT_HIDDEN_SIZE_1,)
+# agent/ddpg_critic_hat_net.actions_hat_hidden_layers = None
+# agent/ddpg_critic_hat_net.joint_hidden_layers = (%CRITIC_HAT_HIDDEN_SIZE_2,)
+# agent/ddpg_critic_hat_net.weight_decay = 0.0
+# agent/ddpg_critic_hat_net.activation_fn = @tf.nn.relu
+# agent/ddpg_critic_hat_net.zero_obs = %ZERO_OBS
+# agent/ddpg_critic_hat_net.images = %IMAGES
+# meta/ddpg_critic_hat_net.states_hat_hidden_layers = (%CRITIC_HAT_HIDDEN_SIZE_1,)
+# meta/ddpg_critic_hat_net.actions_hat_hidden_layers = None
+# meta/ddpg_critic_hat_net.joint_hidden_layers = (%CRITIC_HAT_HIDDEN_SIZE_2,)
+# meta/ddpg_critic_hat_net.weight_decay = 0.0
+# meta/ddpg_critic_hat_net.activation_fn = @tf.nn.relu
+# meta/ddpg_critic_hat_net.zero_obs = False
+# meta/ddpg_critic_hat_net.images = %IMAGES
 
 
 tf.losses.huber_loss.delta = 1.0

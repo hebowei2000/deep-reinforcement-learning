@@ -345,23 +345,24 @@ class UvfAgentCore(object):
       Conditional begin op.
     """
     (state, starting_state, action, reward, next_state,
-     state_repr, next_state_repr) = input_vars
+     state_repr, starting_state_repr, next_state_repr) = input_vars
     def continue_fn():
-      """Continue op fn."""
-      items = [state, starting_state, action, reward, next_state,
+      # append context vars
+      items = [state, starting_state, starting_state_repr, action, reward, next_state,
                state_repr, next_state_repr] + list(self.context_vars)
       
       batch_items = [tf.expand_dims(item, 0) for item in items]
       
-      (states, starting_states, actions, rewards, next_states,
-       state_reprs, next_state_reprs) = batch_items[:7]
+      (states, starting_states, starting_state_reprs, actions, rewards, next_states,
+       state_reprs, next_state_reprs) = batch_items[:8]
       
       context_reward = self.compute_rewards(
-          mode, state_reprs, starting_states, actions, rewards, next_state_reprs,
-          batch_items[7:])[0][0]
+          mode, state_reprs, starting_state_reprs, actions, rewards, next_state_reprs,
+          batch_items[8:])[0][0]
 
       context_reward = tf.cast(context_reward, dtype=reward.dtype)
       
+      # get meta-version rewards
       if self.meta_agent is not None:
         meta_action = tf.concat(self.context_vars, -1)
         items = [state, starting_state, meta_action, reward, next_state,
@@ -377,6 +378,7 @@ class UvfAgentCore(object):
         meta_reward = tf.constant(0, dtype=reward.dtype)
 
       with tf.control_dependencies([context_reward, meta_reward]):
+        # steps up context
         step_ops = self.tf_context.step(mode=mode, agent=self._meta_agent,
                                         state=state,
                                         next_state=next_state,

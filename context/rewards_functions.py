@@ -472,7 +472,7 @@ def negative_distance(states,
   goals = index_states(contexts[0], goal_indices)
   if relative_context:
     goals = states + goals
-  # TODO: change to starting_states_repr
+    
   upper = tf.reduce_sum(tf.multiply(states - starting_states, goals - starting_states))
   lower = tf.abs(tf.reduce_sum(tf.multiply(states - starting_states, goals - starting_states)))
   sign = tf.math.divide(upper, lower)

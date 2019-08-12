@@ -75,21 +75,38 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
   """
 
   tf_env.start_collect() # no effect
-  starting_state = tf_env.current_obs()
   state = tf_env.current_obs() # s
-  #starting_state = tf_env.current_obs()
   state_repr = state_preprocess(state) # f(s)
   action = action_fn(state, context=None) # a
   
-  with tf.control_dependencies([starting_state, state]):
-    transition_type, reward, discount = tf_env.step(action)  # takes step and enters new state
-    
-  if meta_replay_buffer.get_counter() > 0:
-    last_batch = meta_replay_buffer.gather(meta_replay_buffer.get_position())
-    states, actions, rewards, discounts, next_states = last_batch[:5]
-    starting_state = tf.identity(next_states)
+  #n_adds = meta_replay_buffer.get_position()
+  #buff_exist = tf.equal(tf.constant(-1,dtype=tf.int64), n_adds)
+
+  #if meta_replay_buffer.get_num_tensors():
+  #  last_batch = meta_replay_buffer.gather(meta_replay_buffer.get_position())
+  #  states, _, actions_, rewards, discounts, next_states = last_batch[:6]
+  #  starting_state = tf.identity(next_states)
+  #else:
+  #  starting_state = tf_env.current_obs()
+  starting_state = tf_env.current_obs()
+  
+  #def assign_start_s():
+  #  last_batch = meta_replay_buffer.gather(meta_replay_buffer.get_position())
+  #  states, _, actions, rewards, discounts, next_states = last_batch[:6]
+  #  starting_state = tf.identity(next_states)
+  #  return starting_state
+  #
+  #def keep_orig():
+  #  return tf_env.current_obs()
+#
+  #starting_state = tf.cond(buff_exist, true_fn=assign_start_s, false_fn=keep_orig)
+
       
   starting_state_repr = state_preprocess(starting_state)
+
+  with tf.control_dependencies([state,starting_state]):
+    transition_type, reward, discount = tf_env.step(action)  # takes step and enters new state
+    
   
   def increment_step():
     return environment_steps.assign_add(1)
@@ -174,14 +191,14 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
            state_repr, starting_state_repr, next_state_repr],
           mode='explore', meta_action_fn=meta_action_fn)
       context_reward, meta_reward = collect_experience_ops
-      collect_experience_ops = list(collect_experience_ops)
+      collect_experience_ops = list(collect_experience_ops) # convert tuple to list
       collect_experience_ops.append(
           update_episode_rewards(tf.reduce_sum(context_reward), meta_reward,
                                  reset_episode_cond))
 
   meta_action_every_n = agent.tf_context.meta_action_every_n
   with tf.control_dependencies(collect_experience_ops):
-    transition = [state, starting_state, action, reward, discount, next_state] #TODO: starting state
+    transition = [state, starting_state, action, reward, discount, next_state] 
 
     meta_action = tf.to_float(
         tf.concat(context, -1))  # Meta agent action is low-level context
@@ -213,7 +230,7 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
       meta_reward = tf.reshape(meta_reward, reward.shape)
 
     reward = 0.1 * meta_reward
-    meta_transition = [state_var, meta_action_var,
+    meta_transition = [state_var, tf.constant(0), meta_action_var,
                        reward_var + reward,
                        discount * (1 - tf.to_float(next_reset_episode_cond)),
                        next_state]
@@ -479,13 +496,13 @@ def train_uvf(train_dir,
       n_updates = num_updates
 
     with tf.name_scope(mode):
-      batch = buff.get_random_batch(batch_size, num_steps=num_steps)
-      states, actions, rewards, discounts, next_states = batch[:5]
+      batch = buff.get_random_batch(batch_size, num_steps=num_steps) 
+      states, starting_states, actions, rewards, discounts, next_states = batch[:6]
       with tf.name_scope('Reward'):
         tf.summary.scalar('average_step_reward', tf.reduce_mean(rewards))
       rewards *= reward_scale_factor
       batch_queue = slim.prefetch_queue.prefetch_queue(
-          [states, actions, rewards, discounts, next_states] + batch[5:],
+          [states, starting_states, actions, rewards, discounts, next_states] + batch[6:],
           capacity=prefetch_queue_capacity,
           name='batch_queue')
 
@@ -496,10 +513,10 @@ def train_uvf(train_dir,
             for batch in batch_dequeue
         ]
         batch_size *= (repeat_size + 1)
-      states, actions, rewards, discounts, next_states = batch_dequeue[:5]
+      states, starting_states, actions, rewards, discounts, next_states = batch_dequeue[:6]
       if mode == 'meta':
-        low_states = batch_dequeue[5]
-        low_actions = batch_dequeue[6]
+        low_states = batch_dequeue[6]
+        low_actions = batch_dequeue[7]
         low_state_reprs = state_preprocess(low_states)
       state_reprs = state_preprocess(states)
       next_state_reprs = state_preprocess(next_states)
@@ -512,7 +529,7 @@ def train_uvf(train_dir,
           actions = inverse_dynamics.sample(state_reprs, next_state_reprs, 1, prev_actions, sc=0.1)
           actions = tf.stop_gradient(actions)
         elif FLAGS.goal_sample_strategy == 'sample':
-          actions = sample_best_meta_actions(state_reprs, next_state_reprs, prev_actions,
+          actions = sample_best_meta_actions(state_reprs, next_state_reprs ,prev_actions,
                                              low_states, low_actions, low_state_reprs,
                                              inverse_dynamics, uvf_agent, k=10)
         else:
@@ -545,10 +562,10 @@ def train_uvf(train_dir,
       merged_next_states = agent.merged_states(next_states, next_contexts)
       if mode == 'nometa':
         context_rewards, context_discounts = agent.compute_rewards(
-            'train', state_reprs, starting_state, actions, rewards,next_state_reprs, contexts)
+            'train', state_reprs, starting_states, actions, rewards,next_state_reprs, contexts)
       elif mode == 'meta': # Meta-agent uses sum of rewards, not context-specific rewards.
         _, context_discounts = agent.compute_rewards(
-            'train', states, actions, rewards, next_states, contexts)
+            'train', states, starting_states, actions, rewards, next_states, contexts)
         context_rewards = rewards
 
       if agent.gamma_index is not None:

@@ -46,7 +46,7 @@ meta/Context.samplers = {
     "eval2": [@eval2/ConstantSampler],
     "eval3": [@eval3/ConstantSampler],
 }
-meta/Context.reward_fn = @task/temp_distance
+meta/Context.reward_fn = @task/negative_distance
 
 ## Config rewards
 task/negative_distance.state_indices = [3, 4]

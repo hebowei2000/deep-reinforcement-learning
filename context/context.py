@@ -176,7 +176,7 @@ class Context(object):
     Returns:
       A [batch_size] tensor representing rewards.
     """
-    return self._reward_fn(states, actions, starting_state, rewards, next_states,
+    return self._reward_fn(states, starting_state, actions, rewards, next_states,
                            contexts)
 
   def _make_reward_fn(self, reward_fns_list, reward_weights):

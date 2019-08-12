@@ -348,17 +348,19 @@ class UvfAgentCore(object):
      state_repr, starting_state_repr, next_state_repr) = input_vars
     def continue_fn():
       # append context vars
-      items = [state, starting_state, starting_state_repr, action, reward, next_state,
-               state_repr, next_state_repr] + list(self.context_vars)
+      items = [state, starting_state, action, reward, next_state,
+               state_repr, starting_state_repr, next_state_repr] + list(self.context_vars)
       
       batch_items = [tf.expand_dims(item, 0) for item in items]
       
-      (states, starting_states, starting_state_reprs, actions, rewards, next_states,
-       state_reprs, next_state_reprs) = batch_items[:8]
+      (states, starting_states, actions, rewards, next_states,
+       state_reprs, starting_state_reprs, next_state_reprs) = batch_items[:8]
       
       context_reward = self.compute_rewards(
           mode, state_reprs, starting_state_reprs, actions, rewards, next_state_reprs,
-          batch_items[8:])[0][0]
+          batch_items[8:])
+        
+      context_reward = context_reward[0][0]
 
       context_reward = tf.cast(context_reward, dtype=reward.dtype)
       

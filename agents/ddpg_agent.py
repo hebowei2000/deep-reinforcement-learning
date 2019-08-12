@@ -80,12 +80,16 @@ class DdpgAgent(object):
   CRITIC_NET_SCOPE = 'critic_net'
   TARGET_ACTOR_NET_SCOPE = 'target_actor_net'
   TARGET_CRITIC_NET_SCOPE = 'target_critic_net'
+  ACTOR_HAT_NET_SCOPE = 'actor_hat_net'
+  CRITIC_HAT_NET_SCOPE = 'critic_hat_net'
 
   def __init__(self,
                observation_spec,
                action_spec,
                actor_net=networks.actor_net,
                critic_net=networks.critic_net,
+               actor_hat_net=networks.actor_hat_net,
+               critic_hat_net=networks.critic_hat_net,
                td_errors_loss=tf.losses.huber_loss,
                dqda_clipping=0.,
                actions_regularizer=0.,

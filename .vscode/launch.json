@@ -5,6 +5,39 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Python: run_train.py",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": [
+            "--train_dir=/home/he/tmp/hiro_orig/ant_maze/base_uvf/test3/train",
+            "--config_file=./configs/base_uvf.gin",
+            "--config_file=./configs/train_uvf.gin",
+            "--config_file=./context/configs/hiro_orig.gin",
+            "--config_file=./context/configs/ant_maze.gin",
+            "--summarize_gradients=False",
+            "--save_interval_secs=60", 
+            "--save_summaries_secs=1", 
+            "--master=local", 
+            "--alsologtostderr"
+            ],
+        },
+        {
+            "name": "Python: Train",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": [
+                "test3",
+                "hiro_orig",
+                "ant_maze",
+                "base_uvf",
+                "suite"
+            ]
+        },
+        {
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",

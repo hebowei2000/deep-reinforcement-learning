@@ -408,7 +408,7 @@ def temp_distance(states,
 
 @gin.configurable
 def negative_distance(states,
-                      starting_state,
+                      starting_states,
                       actions,
                       rewards,
                       next_states,
@@ -467,19 +467,20 @@ def negative_distance(states,
   stats = {}
   record_tensor(next_states, state_indices, stats, 'next_states')
   states = index_states(states, state_indices)
+  starting_states = index_states(starting_states, state_indices)
   next_states = index_states(next_states, state_indices)
   goals = index_states(contexts[0], goal_indices)
   if relative_context:
     goals = states + goals
-  
-  upper = tf.reduce_sum(tf.multiply(states - starting_state, goals - starting_state))
-  lower = tf.abs(tf.reduce_sum(tf.multiply(states - starting_state, goals - starting_state)))
+  # TODO: change to starting_states_repr
+  upper = tf.reduce_sum(tf.multiply(states - starting_states, goals - starting_states))
+  lower = tf.abs(tf.reduce_sum(tf.multiply(states - starting_states, goals - starting_states)))
   sign = tf.math.divide(upper, lower)
   
-  result = tf.multiply(tf.square(tf.math.divide(upper, tf.norm(goals - starting_state, ord=2))), sign)
+  result = tf.multiply(tf.square(tf.math.divide(upper, tf.norm(goals - starting_states, ord=2))), sign)
 
-  term_1 = tf.square(tf.norm(states - starting_state, 2))
-  term_2=tf.square(tf.math.divide(upper, tf.norm(goals - starting_state, ord=2)))
+  term_1 = tf.square(tf.norm(states - starting_states, 2))
+  term_2=tf.square(tf.math.divide(upper, tf.norm(goals - starting_states, ord=2)))
   return result-alpha*(term_1-term_2)
 
 

@@ -344,29 +344,34 @@ class UvfAgentCore(object):
     Returns:
       Conditional begin op.
     """
-    (state, action, reward, next_state,
+    (state, starting_state, action, reward, next_state,
      state_repr, next_state_repr) = input_vars
     def continue_fn():
       """Continue op fn."""
-      items = [state, action, reward, next_state,
+      items = [state, starting_state, action, reward, next_state,
                state_repr, next_state_repr] + list(self.context_vars)
+      
       batch_items = [tf.expand_dims(item, 0) for item in items]
-      (states, actions, rewards, next_states,
-       state_reprs, next_state_reprs) = batch_items[:6]
+      
+      (states, starting_states, actions, rewards, next_states,
+       state_reprs, next_state_reprs) = batch_items[:7]
+      
       context_reward = self.compute_rewards(
-          mode, state_reprs, actions, rewards, next_state_reprs,
-          batch_items[6:])[0][0]
+          mode, state_reprs, starting_states, actions, rewards, next_state_reprs,
+          batch_items[7:])[0][0]
+
       context_reward = tf.cast(context_reward, dtype=reward.dtype)
+      
       if self.meta_agent is not None:
         meta_action = tf.concat(self.context_vars, -1)
-        items = [state, meta_action, reward, next_state,
+        items = [state, starting_state, meta_action, reward, next_state,
                  state_repr, next_state_repr] + list(self.meta_agent.context_vars)
         batch_items = [tf.expand_dims(item, 0) for item in items]
-        (states, meta_actions, rewards, next_states,
-         state_reprs, next_state_reprs) = batch_items[:6]
+        (states, starting_states, meta_actions, rewards, next_states,
+         state_reprs, next_state_reprs) = batch_items[:7]
         meta_reward = self.meta_agent.compute_rewards(
-            mode, states, meta_actions, rewards,
-            next_states, batch_items[6:])[0][0]
+            mode, states, starting_states, meta_actions, rewards,
+            next_states, batch_items[7:])[0][0]
         meta_reward = tf.cast(meta_reward, dtype=reward.dtype)
       else:
         meta_reward = tf.constant(0, dtype=reward.dtype)
@@ -387,8 +392,8 @@ class UvfAgentCore(object):
       with tf.control_dependencies(begin_ops):
         return tf.zeros_like(reward), tf.zeros_like(reward)
     with tf.control_dependencies(input_vars):
-      cond_begin_episode_op = tf.cond(cond, continue_fn, begin_episode_fn)
-    return cond_begin_episode_op
+      return_fn = tf.cond(cond, continue_fn, begin_episode_fn)
+    return return_fn
 
   def get_env_base_wrapper(self, env_base, **begin_kwargs):
     """Create a wrapper around env_base, with agent-specific begin/end_episode.

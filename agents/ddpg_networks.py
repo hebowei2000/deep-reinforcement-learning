@@ -233,3 +233,4 @@ def next_states_hat_net(states, next_states_spec,
                 next_states = next_states_means + next_states_magnitudes * next_states
           
             return next_states
+

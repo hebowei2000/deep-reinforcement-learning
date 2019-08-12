@@ -45,7 +45,6 @@ class CircularBuffer(object):
     self._buffer_size = np.int64(buffer_size)
     self._scope = scope
     self._tensors = collections.OrderedDict()
-    self.counter=0
     with tf.variable_scope(self._scope):
       self._num_adds = tf.Variable(0, dtype=tf.int64, name='num_adds')
     self._num_adds_cs = tf.CriticalSection(name='num_adds')
@@ -140,7 +139,7 @@ class CircularBuffer(object):
       # not be affected by other threads updating num_adds.
       return self._num_adds.assign_add(1) + 0
     def _add():
-      self.counter+=1
+      
       num_adds_inc = self._num_adds_cs.execute(_increment_num_adds)
       current_pos = tf.mod(num_adds_inc - 1, self._buffer_size)
       update_ops = []

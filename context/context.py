@@ -176,7 +176,7 @@ class Context(object):
     Returns:
       A [batch_size] tensor representing rewards.
     """
-    return self._reward_fn(states, actions, starting_state, rewards, next_states,
+    return self._reward_fn(states, starting_state, actions, rewards, next_states,
                            contexts)
 
   def _make_reward_fn(self, reward_fns_list, reward_weights):
@@ -367,7 +367,8 @@ class Context(object):
       ops.append(tf.assign_add(self.t, 1))  # increment timer
       return ops
     else:
-      ops = agent.tf_context.step(mode, **kwargs)
+      # this function is called twice: once for high, once for low.
+      ops = agent.tf_context.step(mode, **kwargs)  
       state = kwargs['state']
       next_state = kwargs['next_state']
       state_repr = kwargs['state_repr']

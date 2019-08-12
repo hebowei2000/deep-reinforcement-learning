@@ -298,7 +298,7 @@ def negative_mse(states,
 
 
 @gin.configurable
-def temp_distance(states,
+def negative_distance(states,
                       starting_state,
                       actions,
                       rewards,
@@ -403,11 +403,12 @@ def temp_distance(states,
   old_dist *= reward_scales
   if diff:
     return bonus + offset + tf.to_float(old_dist - dist), tf.to_float(discounts)
-  return bonus + offset + tf.to_float(-dist), tf.to_float(discounts)
+  ret = bonus + offset + tf.to_float(-dist), tf.to_float(discounts)
+  return ret
 
 
 @gin.configurable
-def negative_distance(states,
+def normalized_distance(states,
                       starting_states,
                       actions,
                       rewards,
@@ -472,16 +473,29 @@ def negative_distance(states,
   goals = index_states(contexts[0], goal_indices)
   if relative_context:
     goals = states + goals
-  # TODO: change to starting_states_repr
-  upper = tf.reduce_sum(tf.multiply(states - starting_states, goals - starting_states))
-  lower = tf.abs(tf.reduce_sum(tf.multiply(states - starting_states, goals - starting_states)))
-  sign = tf.math.divide(upper, lower)
   
-  result = tf.multiply(tf.square(tf.math.divide(upper, tf.norm(goals - starting_states, ord=2))), sign)
+  sq_dists = tf.squared_difference(next_states * state_scales,
+      goals * goal_scales)
 
-  term_1 = tf.square(tf.norm(states - starting_states, 2))
-  term_2=tf.square(tf.math.divide(upper, tf.norm(goals - starting_states, ord=2)))
-  return result-alpha*(term_1-term_2)
+  dist = tf.reduce_sum(sq_dists, -1)
+
+  def normalized_dist(states):
+    inner = tf.multiply(states - starting_states, goals - starting_states)
+    upper = tf.reduce_sum(inner)
+    lower = tf.abs(tf.reduce_sum(tf.multiply(states - starting_states, goals - starting_states)))
+    sign = tf.math.divide(upper, lower)
+    
+    result = tf.multiply(tf.square(tf.math.divide(upper, tf.norm(goals - starting_states, ord=2))), sign)
+
+    term_1 = tf.square(tf.norm(states - starting_states, 2))
+    term_2=tf.square(tf.math.divide(upper, tf.norm(goals - starting_states, ord=2)))
+    return result-alpha*(term_1-term_2)
+    
+  dist_s = normalized_dist(states)
+  dist_ns = normalized_dist(next_states)
+
+  ret = tf.expand_dims(dist_ns - dist_s, 0), tf.to_float(dist > termination_epsilon) 
+  return ret 
 
 
 

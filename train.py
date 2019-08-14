@@ -431,11 +431,11 @@ def train_uvf(train_dir,
 
   # Create init ops
   action_fn = uvf_agent.action # actor
-  action_fn = uvf_agent.add_noise_fn(action_fn, global_step=global_step) 
+  action_fn = uvf_agent.add_noise_fn(action_fn, global_step=None) 
   meta_action_fn = meta_agent.action
-  meta_action_fn = meta_agent.add_noise_fn(meta_action_fn, global_step=global_step)
+  meta_action_fn = meta_agent.add_noise_fn(meta_action_fn, global_step=None)
   meta_actions_fn = meta_agent.actions # returns actor net
-  meta_actions_fn = meta_agent.add_noise_fn(meta_actions_fn, global_step=global_step)
+  meta_actions_fn = meta_agent.add_noise_fn(meta_actions_fn, global_step=None)
   
   init_collect_experience_op = collect_experience(
       tf_env,

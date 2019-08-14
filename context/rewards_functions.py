@@ -504,6 +504,102 @@ def normalized_distance(states,
   return ret 
 
 
+@gin.configurable
+def bowei_distance(states,
+                      starting_states,
+                      actions,
+                      rewards,
+                      next_states,
+                      contexts,
+                      alpha = 0.01,
+                      state_scales=1.0,
+                      goal_scales=1.0,
+                      reward_scales=1.0,
+                      weight_index=None,
+                      weight_vector=None,
+                      summarize=False,
+                      termination_epsilon=1e-4,
+                      state_indices=None,
+                      goal_indices=None,
+                      vectorize=False,
+                      relative_context=False,
+                      diff=False,
+                      norm='L2',
+                      epsilon=1e-10,
+                      bonus_epsilon=0., #5.,
+                      offset=0.0):
+  """Returns the negative euclidean distance between next_states and contexts.
+
+  Args:
+    states: A [batch_size, num_state_dims] Tensor representing a batch
+        of states.
+    actions: A [batch_size, num_action_dims] Tensor representing a batch
+      of actions.
+    rewards: A [batch_size] Tensor representing a batch of rewards.
+    next_states: A [batch_size, num_state_dims] Tensor representing a batch
+      of next states.
+    contexts: A list of [batch_size, num_context_dims] Tensor representing
+      a batch of contexts.
+    state_scales: multiplicative scale for (next) states. A scalar or 1D tensor,
+      must be broadcastable to number of state dimensions.
+    goal_scales: multiplicative scale for goals. A scalar or 1D tensor,
+      must be broadcastable to number of goal dimensions.
+    reward_scales: multiplicative scale for rewards. A scalar or 1D tensor,
+      must be broadcastable to number of reward dimensions.
+    weight_index: (integer) The context list index that specifies weight.
+    weight_vector: (a number or a list or Numpy array) The weighting vector,
+      broadcastable to `next_states`.
+    summarize: (boolean) enable summary ops.
+    termination_epsilon: terminate if dist is less than this quantity.
+    state_indices: (a list of integers) list of state indices to select.
+    goal_indices: (a list of integers) list of goal indices to select.
+    vectorize: Return a vectorized form.
+    norm: L1 or L2.
+    epsilon: small offset to ensure non-negative/zero distance.
+
+  Returns:
+    A new tf.float32 [batch_size] rewards Tensor, and
+      tf.float32 [batch_size] discounts tensor.
+  """
+  del actions, rewards  # Unused
+  stats = {}
+  record_tensor(next_states, state_indices, stats, 'next_states')
+  states = index_states(states, state_indices)
+  starting_states = index_states(starting_states, state_indices)
+  next_states = index_states(next_states, state_indices)
+  goals = index_states(contexts[0], goal_indices)
+  if relative_context:
+    goals = states + goals
+  
+  sq_dists = tf.squared_difference(next_states * state_scales,
+      goals * goal_scales)
+
+  dist = tf.reduce_sum(sq_dists, -1)
+
+  #def normalized_dist(states):
+  #  dot_product = tf.matmul(states - starting_states, tf.transpose(goals - starting_states))
+  #  return goals - starting_states - dot_product
+  def bowei_dist(states):
+    inner = tf.multiply(states - starting_states, goals - starting_states)
+    upper = tf.reduce_sum(inner, -1)
+    sign = tf.sign(upper)
+    
+    result = sign * tf.square(tf.math.divide(upper, tf.norm(goals - starting_states, ord=2)))
+
+    term_1 = tf.square(tf.norm(states - starting_states, 2))
+    term_2 = tf.square(tf.math.divide(upper, tf.norm(goals - starting_states, ord=2)))
+    term_3 = tf.norm(goals - starting_states, ord=2)-tf.math.divide(upper, tf.norm(goals - starting_states, ord=2))
+    term_4 = tf.sqrt(term_1 - term_2)
+    return -2*term_3-term_4
+    
+  dist_s = bowei_dist(states)
+  dist_s = tf.sqrt(tf.square(dist_s) + epsilon)
+  dist_ns = bowei_dist(next_states)
+  
+
+  ret = dist_ns, tf.to_float(dist > termination_epsilon) 
+  return ret 
+
 
 @gin.configurable
 def cosine_similarity(states,

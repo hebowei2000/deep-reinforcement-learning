@@ -251,12 +251,13 @@ def get_eval_step(uvf_agent,
   with tf.control_dependencies([reward, discount]):
     next_state = tf_env.current_obs()
     next_state_repr = state_preprocess(next_state)
-
+    
+  
   with tf.control_dependencies([increment_episode_op]):
     post_reward, post_meta_reward = uvf_agent.cond_begin_episode_op(
         tf.logical_not(reset_episode_cond),
-        [state, action_ph, reward, next_state,
-         state_repr, next_state_repr],
+        [state, tf.constant(0.0), action_ph, reward, next_state,
+         state_repr, tf.constant(0.0), next_state_repr],
         mode=mode, meta_action_fn=meta_action_fn)
 
   # Important: do manual reset after getting the final reward from the

@@ -287,7 +287,7 @@ class ReplaySampler(BaseSampler):
           self._context_range[0], (int, long, float))
       next_states = tf.concat(
           [
-              tf.random_uniform(
+                  tf.random_uniform(
                   shape=next_states[:, :1].shape,
                   minval=self._context_range[0],
                   maxval=self._context_range[1],
@@ -397,7 +397,7 @@ class DirectionSampler(RandomSampler):
     spec = self._context_spec
     context_range = self._context_range
     if isinstance(context_range[0], (int, float)):
-      contexts = tf.random_uniform(
+      contexts = tf.random_uniform( #contexts=random
           shape=[
               batch_size,
           ] + spec.shape.as_list(),
@@ -420,16 +420,17 @@ class DirectionSampler(RandomSampler):
           ],
           axis=1)
     else: raise NotImplementedError(context_range)
-    self._validate_contexts(contexts)
+    self._validate_contexts(contexts)  # must be same dim as goal_dim
     if 'sampler_fn' in kwargs:
-      other_contexts = kwargs['sampler_fn']()
+      other_contexts = kwargs['sampler_fn']()  # never executes
+      assert False
     else:
       other_contexts = contexts
     state, next_state = kwargs['state'], kwargs['next_state']
     if state is not None and next_state is not None:
       my_context_range = (np.array(context_range[1]) - np.array(context_range[0])) / 2 * np.ones(spec.shape.as_list())
       contexts = tf.concat(
-          [0.1 * my_context_range[:self._k] *
+          [0.1 * my_context_range[:self._k] *    # _k=subgoal_dim   (k=15 in ant_maze)
            tf.random_normal(tf.shape(state[:, :self._k]), dtype=state.dtype) +
            tf.random_shuffle(state[:, :self._k]) - state[:, :self._k],
            other_contexts[:, self._k:]], 1)
@@ -442,4 +443,5 @@ class DirectionSampler(RandomSampler):
       next_contexts = contexts  #LALA cosine
     else:
       next_contexts = contexts
+    # basically two randomized tensors
     return tf.stop_gradient(contexts), tf.stop_gradient(next_contexts)

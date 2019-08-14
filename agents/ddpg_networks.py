@@ -192,12 +192,12 @@ def critic_hat_net(states, next_states,
                                                    activation_fn=None,
                                                    normalizer_fn=None,
                                                    scope='q_hat_value')
-                    if num_reward_dims == 1:
-                      value = tf.reshape(value, [-1])
-                    if not for_critic_hat_loss and num_reward_dims > 1:
-                      value = tf.reduce_sum(
-                          value * tf.abs(orig_states[:, -num_reward_dims:]), -1)
-                  return value
+                      if num_reward_dims == 1:
+                        value = tf.reshape(value, [-1])
+                      if not for_critic_hat_loss and num_reward_dims > 1:
+                        value = tf.reduce_sum(
+                            value * tf.abs(orig_states[:, -num_reward_dims:]), -1)
+                      return value
           
                
 
@@ -220,7 +220,7 @@ def next_states_hat_net(states, next_states_spec,
               if hidden_layers:
                 states = slim.stack(states, slim.fully_connected, hidden_layers,
                                     scope='states')
-  with slim.arg_scope([slim.fully_connected],
+              with slim.arg_scope([slim.fully_connected],
                       weights_initializer=tf.random_uniform_initializer(
                       minval=-0.003, maxval=0.003)):
                 next_states = slim.fully_connected(states,
@@ -232,5 +232,5 @@ def next_states_hat_net(states, next_states_spec,
                 next_states_magnitudes = (next_states_spec.maximum - next_states_spec.minimum) / 2.0
                 next_states = next_states_means + next_states_magnitudes * next_states
           
-            return next_states
+              return next_states
 

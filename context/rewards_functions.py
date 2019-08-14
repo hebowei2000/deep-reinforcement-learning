@@ -311,7 +311,7 @@ def negative_distance(states,
                       weight_vector=None,
                       summarize=False,
                       termination_epsilon=1e-4,
-                      state_indices=None,
+                      state_indices=None,  # [3, 4]
                       goal_indices=None,
                       vectorize=False,
                       relative_context=False,
@@ -353,6 +353,7 @@ def negative_distance(states,
     A new tf.float32 [batch_size] rewards Tensor, and
       tf.float32 [batch_size] discounts tensor.
   """
+  
   del actions, rewards  # Unused
   stats = {}
   record_tensor(next_states, state_indices, stats, 'next_states')
@@ -414,7 +415,7 @@ def normalized_distance(states,
                       rewards,
                       next_states,
                       contexts,
-                      alpha = 1.0,
+                      alpha = 0.5,
                       state_scales=1.0,
                       goal_scales=1.0,
                       reward_scales=1.0,
@@ -479,28 +480,34 @@ def normalized_distance(states,
 
   dist = tf.reduce_sum(sq_dists, -1)
 
+  #def normalized_dist(states):
+  #  dot_product = tf.matmul(states - starting_states, tf.transpose(goals - starting_states))
+  #  return goals - starting_states - dot_product
   def normalized_dist(states):
     inner = tf.multiply(states - starting_states, goals - starting_states)
-    upper = tf.reduce_sum(inner)
-    lower = tf.abs(tf.reduce_sum(tf.multiply(states - starting_states, goals - starting_states)))
-    sign = tf.math.divide(upper, lower)
+    upper = tf.reduce_sum(inner, -1)
+    sign = tf.sign(upper)
     
-    result = tf.multiply(tf.square(tf.math.divide(upper, tf.norm(goals - starting_states, ord=2))), sign)
+    result = sign * tf.square(tf.math.divide(upper, tf.norm(goals - starting_states, ord=2)))
 
     term_1 = tf.square(tf.norm(states - starting_states, 2))
-    term_2=tf.square(tf.math.divide(upper, tf.norm(goals - starting_states, ord=2)))
-    return result-alpha*(term_1-term_2)
+    term_2 = tf.square(tf.math.divide(upper, tf.norm(goals - starting_states, ord=2)))
+    
+    return tf.sqrt(epsilon + tf.abs(result - alpha * (term_1 - term_2)))
     
   dist_s = normalized_dist(states)
+  dist_s = tf.sqrt(tf.square(dist_s) + epsilon)
   dist_ns = normalized_dist(next_states)
+  dist_ns = tf.sqrt(tf.square(dist_ns) + epsilon)
 
-  ret = tf.expand_dims(dist_ns - dist_s, 0), tf.to_float(dist > termination_epsilon) 
+  ret = dist_ns, tf.to_float(dist > termination_epsilon) 
   return ret 
 
 
 
 @gin.configurable
 def cosine_similarity(states,
+                      starting_states,
                       actions,
                       rewards,
                       next_states,

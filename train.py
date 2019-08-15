@@ -82,13 +82,12 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
   #n_adds = meta_replay_buffer.get_position()
   #buff_exist = tf.equal(tf.constant(-1,dtype=tf.int64), n_adds)
 
-  #if meta_replay_buffer.get_num_tensors():
-  #  last_batch = meta_replay_buffer.gather(meta_replay_buffer.get_position())
-  #  states, _, actions_, rewards, discounts, next_states = last_batch[:6]
-  #  starting_state = tf.identity(next_states)
-  #else:
-  #  starting_state = tf_env.current_obs()
-  starting_state = tf_env.current_obs()
+  if meta_replay_buffer.get_num_tensors():
+    last_batch = meta_replay_buffer.gather(meta_replay_buffer.get_position())
+    states, _, actions_, rewards, discounts, next_states = last_batch[:6]
+    starting_state = tf.identity(next_states)
+  else:
+    starting_state = tf.identity(state)
   
   #def assign_start_s():
   #  last_batch = meta_replay_buffer.gather(meta_replay_buffer.get_position())
@@ -117,9 +116,9 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
   def increment_reset():
     return num_resets.assign_add(1)
 
-  def update_episode_rewards(context_reward, meta_reward, reset):
+  def update_episode_rewards(context_reward, meta_reward, reset): #
     new_episode_rewards = tf.concat(
-        [episode_rewards[:1] + context_reward, episode_rewards[1:]], 0)
+        [episode_rewards[:1] + context_reward, episode_rewards[1:]], 0) 
     new_episode_meta_rewards = tf.concat(
         [episode_meta_rewards[:1] + meta_reward,
          episode_meta_rewards[1:]], 0)
@@ -181,6 +180,7 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
   else:
     context = []
     meta_context = []
+  
   with tf.control_dependencies([next_state] + context + meta_context):
     if disable_agent_reset:
       collect_experience_ops = [tf.no_op()]  # don't reset agent
@@ -436,6 +436,7 @@ def train_uvf(train_dir,
   meta_action_fn = meta_agent.add_noise_fn(meta_action_fn, global_step=None)
   meta_actions_fn = meta_agent.actions # returns actor net
   meta_actions_fn = meta_agent.add_noise_fn(meta_actions_fn, global_step=None)
+  
   init_collect_experience_op = collect_experience(
       tf_env,
       uvf_agent,
@@ -520,6 +521,7 @@ def train_uvf(train_dir,
         low_state_reprs = state_preprocess(low_states)
       state_reprs = state_preprocess(states)
       next_state_reprs = state_preprocess(next_states)
+      starting_states_reprs = state_preprocess(starting_states)
 
       if mode == 'meta':  # Re-label meta-action
         prev_actions = actions
@@ -529,7 +531,7 @@ def train_uvf(train_dir,
           actions = inverse_dynamics.sample(state_reprs, next_state_reprs, 1, prev_actions, sc=0.1)
           actions = tf.stop_gradient(actions)
         elif FLAGS.goal_sample_strategy == 'sample':
-          actions = sample_best_meta_actions(state_reprs, next_state_reprs ,prev_actions,
+          actions = sample_best_meta_actions(state_reprs, next_state_reprs ,prev_actions,    
                                              low_states, low_actions, low_state_reprs,
                                              inverse_dynamics, uvf_agent, k=10)
         else:
@@ -553,31 +555,42 @@ def train_uvf(train_dir,
           mode='train', batch_size=batch_size,
           state=states, next_state=next_states,
       )
+
+      # if nometa, contexts is replaced with contexts
+      #  acquired from transition experience. 
       if not relabel:  # Re-label context (in the style of TDM or HER).
         contexts, next_contexts = (
             batch_dequeue[-2*len(contexts):-1*len(contexts)],
-            batch_dequeue[-1*len(contexts):])
+            batch_dequeue[-1*len(contexts):]) 
+
 
       merged_states = agent.merged_states(states, contexts)
       merged_next_states = agent.merged_states(next_states, next_contexts)
+      
+
+      # When computing reward for meta, use state_dim=30
+      # When computing reward for nometa, use repr_state_dim=15
+
       if mode == 'nometa':
         context_rewards, context_discounts = agent.compute_rewards(
-            'train', state_reprs, starting_states, actions, rewards,next_state_reprs, contexts)
+            'train', state_reprs, starting_states_reprs, actions, rewards,next_state_reprs, contexts)
       elif mode == 'meta': # Meta-agent uses sum of rewards, not context-specific rewards.
         _, context_discounts = agent.compute_rewards(
             'train', states, starting_states, actions, rewards, next_states, contexts)
-        context_rewards = rewards
-
+        context_rewards = rewards # does not use returned rewards
+      
       if agent.gamma_index is not None:
         context_discounts *= tf.cast(
             tf.reshape(contexts[agent.gamma_index], (-1,)),
             dtype=context_discounts.dtype)
       else: context_discounts *= my_gamma
 
+      #critic_loss = agent.critic_loss(merged_states, actions,
+      #                                context_rewards, context_discounts,
+      #                                merged_next_states)
       critic_loss = agent.critic_loss(merged_states, actions,
                                       context_rewards, context_discounts,
                                       merged_next_states)
-
       critic_loss = tf.reduce_mean(critic_loss)
 
       actor_loss = agent.actor_loss(merged_states, actions,

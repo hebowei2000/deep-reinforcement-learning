@@ -98,7 +98,7 @@ def compute_average_reward(sess, env_base, step_fn, gamma, num_steps,
     env_base.begin_episode()
     (reward, last_reward, meta_reward, last_meta_reward,
      states, actions) = compute_reward(
-        sess, step_fn, gamma, num_steps)
+        sess, step_fn, gamma, num_steps, env_base._gym_env)
     s_reward = last_meta_reward  # Navigation
     success = (s_reward > -5.0)  # When using diff=False
     logging.info('Episode = %d, reward = %s, meta_reward = %f, '
@@ -121,7 +121,7 @@ def compute_average_reward(sess, env_base, step_fn, gamma, num_steps,
           states, actions)
 
 
-def compute_reward(sess, step_fn, gamma, num_steps):
+def compute_reward(sess, step_fn, gamma, num_steps, gym_env):
   """Computes the discounted reward for a given number of steps.
 
   Args:
@@ -141,6 +141,7 @@ def compute_reward(sess, step_fn, gamma, num_steps):
   states = []
   actions = []
   for _ in range(num_steps):
+    gym_env.render()
     state, action, transition_type, reward, meta_reward, discount, _, _ = step_fn(sess)
     total_reward += reward * gamma_step * discount
     total_meta_reward += meta_reward * gamma_step * discount

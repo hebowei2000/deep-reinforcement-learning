@@ -33,9 +33,9 @@ agent/Context.samplers = {
 agent/Context.context_transition_fn = @relative_context_transition_fn
 agent/Context.context_multi_transition_fn = @relative_context_multi_transition_fn
 
-agent/Context.reward_fn = @uvf/negative_distance
+agent/Context.reward_fn = @uvf/normalized_distance
 
-## Config meta context
+## Config meta context  
 meta/Context.context_ranges = [%meta_context_range]
 meta/Context.context_shapes = [2]
 meta/Context.samplers = {

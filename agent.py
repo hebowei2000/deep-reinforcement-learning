@@ -358,10 +358,8 @@ class UvfAgentCore(object):
       
       context_reward = self.compute_rewards(
           mode, state_reprs, starting_state_reprs, actions, rewards, next_state_reprs,
-          batch_items[8:])
+          batch_items[8:])[0][0]
         
-      context_reward = context_reward[0][0]
-
       context_reward = tf.cast(context_reward, dtype=reward.dtype)
       
       # get meta-version rewards

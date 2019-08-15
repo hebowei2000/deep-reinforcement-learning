@@ -38,16 +38,16 @@ class Context(object):
 
   def __init__(self,
                tf_env,
-               context_ranges=None,
-               context_shapes=None,
-               state_indices=None,
-               variable_indices=None,
-               gamma_index=None,
-               settable_context=False,
-               timers=None,
-               samplers=None,
-               reward_weights=None,
-               reward_fn=None,
+               context_ranges=None, # (-10,10)
+               context_shapes=None, # =goal dimension
+               state_indices=None,  # None
+               variable_indices=None,  # None
+               gamma_index=None,    # None
+               settable_context=False, # False
+               timers=None,  # None
+               samplers=None,   # DirectionSampler or RandomSampler
+               reward_weights=None,  # None
+               reward_fn=None,    # =negative_distance
                random_sampler_mode='random',
                normalizers=None,
                context_transition_fn=None,
@@ -72,6 +72,8 @@ class Context(object):
         specs.TensorSpec(dtype=self._obs_spec.dtype, shape=shape)
         for shape in self._context_shapes
     ])
+ 
+    
     if context_ranges is not None:
       self.context_ranges = context_ranges
     else:
@@ -105,8 +107,8 @@ class Context(object):
     self._reward_fns = dict()
 
     # assign reward fns
-    self._add_custom_reward_fns()
-    reward_weights = reward_weights or None
+    self._add_custom_reward_fns()  # pass
+    reward_weights = reward_weights or None  # None
     self._reward_fn = self._make_reward_fn(reward_fn, reward_weights)
 
     # assign samplers
@@ -244,19 +246,20 @@ class Context(object):
 
     def batch_sampler_fn(batch_size, state=None, next_state=None, **kwargs):
       """Sampler fn."""
-      contexts_tuples = [
+      contexts_tuples = [     # basically two randomized tensors
           sampler(batch_size, state=state, next_state=next_state, **kwargs)
           for sampler in sampler_fns]
       contexts = [c[0] for c in contexts_tuples]
       next_contexts = [c[1] for c in contexts_tuples]
       contexts = [
+          # normalizer is always None.
           normalizer.update_apply(c) if normalizer is not None else c
           for normalizer, c in zip(self._normalizers, contexts)
-      ]
+      ]   # contexts = contexts
       next_contexts = [
           normalizer.apply(c) if normalizer is not None else c
           for normalizer, c in zip(self._normalizers, next_contexts)
-      ]
+      ]   # next_contexts = next_contexts
       return contexts, next_contexts
 
     self._sampler_fns[mode] = batch_sampler_fn

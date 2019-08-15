@@ -86,8 +86,8 @@ class DdpgAgent(object):
   def __init__(self,
                observation_spec,
                action_spec,
-               actor_net=networks.actor_net,
-               critic_net=networks.critic_net,
+               actor_net=networks.actor_net,  # class
+               critic_net=networks.critic_net,  # class
                #actor_hat_net=networks.actor_hat_net,
                #critic_hat_net=networks.critic_hat_net,
                td_errors_loss=tf.losses.huber_loss,
@@ -137,9 +137,9 @@ class DdpgAgent(object):
     self._critic_net = tf.make_template(
         self.CRITIC_NET_SCOPE, critic_net, create_scope_now_=True)
     self._actor_hat_net = tf.make_template(
-          self.ACTOR_HAT_NET_SCOPE, actor_hat_net, create_scope_now_=True)
-     self._critic_hat_net = tf.make_template(
-          self.CRITIC_HAT_NET_SCOPE, critic_hat_net, create_scope_now_=True)
+          self.ACTOR_HAT_NET_SCOPE, actor_net, create_scope_now_=True)
+    self._critic_hat_net = tf.make_template(
+          self.CRITIC_HAT_NET_SCOPE, critic_net, create_scope_now_=True)
     self._target_actor_net = tf.make_template(
         self.TARGET_ACTOR_NET_SCOPE, actor_net, create_scope_now_=True)
     self._target_critic_net = tf.make_template(
@@ -190,6 +190,21 @@ class DdpgAgent(object):
     agent_action = self.action(state)
     agent_action += tf.random_normal(tf.shape(agent_action)) * stddev
     return utils.clip_to_spec(agent_action, self._action_spec)
+
+
+
+  def actor_hat_net(self, states):
+    """Returns the output of the actor hat network (mu')"""
+    self._validate_states(states)
+    return self._actor_hat_net(states, self._action_spec)
+
+
+  def critic_hat_net(self, states, actions):
+    """Returns the output of the critic hat network (Q')"""
+    self._validate_states(states)
+    self._validate_actions(actions)
+    return self._critic_hat_net(states, actions)
+
 
   def actor_net(self, states, stop_gradients=False):
     """Returns the output of the actor network.
@@ -525,7 +540,7 @@ class TD3Agent(DdpgAgent):
   def __init__(self,
                observation_spec,
                action_spec,
-               actor_net=networks.actor_net,
+               actor_net=networks.actor_net,  
                critic_net=networks.critic_net,
                td_errors_loss=tf.losses.huber_loss,
                dqda_clipping=0.,
@@ -581,6 +596,11 @@ class TD3Agent(DdpgAgent):
         self.TARGET_CRITIC_NET_SCOPE, critic_net, create_scope_now_=True)
     self._target_critic_net2 = tf.make_template(
         self.TARGET_CRITIC_NET2_SCOPE, critic_net, create_scope_now_=True)
+    self._actor_hat_net = tf.make_template(
+          self.ACTOR_HAT_NET_SCOPE, actor_net, create_scope_now_=True)
+    self._critic_hat_net = tf.make_template(
+          self.CRITIC_HAT_NET_SCOPE, critic_net, create_scope_now_=True)
+    
     self._td_errors_loss = td_errors_loss
     if dqda_clipping < 0:
       raise ValueError('dqda_clipping must be >= 0.')

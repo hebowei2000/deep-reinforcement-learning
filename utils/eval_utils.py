@@ -21,9 +21,11 @@ from __future__ import division
 from __future__ import print_function
 import numpy as np
 import tensorflow as tf
+import time
 from collections import namedtuple
 logging = tf.logging
 import gin.tf
+import random
 
 
 @gin.configurable
@@ -72,7 +74,7 @@ def compute_model_loss(sess, model_rollout_fn, states, actions):
 
 
 def compute_average_reward(sess, env_base, step_fn, gamma, num_steps,
-                           num_episodes):
+                           num_episodes, tf_env):
   """Computes the discounted reward for a given number of steps.
 
   Args:
@@ -98,7 +100,7 @@ def compute_average_reward(sess, env_base, step_fn, gamma, num_steps,
     env_base.begin_episode()
     (reward, last_reward, meta_reward, last_meta_reward,
      states, actions) = compute_reward(
-        sess, step_fn, gamma, num_steps, env_base._gym_env)
+        sess, step_fn, gamma, num_steps, env_base)
     s_reward = last_meta_reward  # Navigation
     success = (s_reward > -5.0)  # When using diff=False
     logging.info('Episode = %d, reward = %s, meta_reward = %f, '
@@ -121,7 +123,7 @@ def compute_average_reward(sess, env_base, step_fn, gamma, num_steps,
           states, actions)
 
 
-def compute_reward(sess, step_fn, gamma, num_steps, gym_env):
+def compute_reward(sess, step_fn, gamma, num_steps, env_base):
   """Computes the discounted reward for a given number of steps.
 
   Args:
@@ -141,7 +143,16 @@ def compute_reward(sess, step_fn, gamma, num_steps, gym_env):
   states = []
   actions = []
   for _ in range(num_steps):
-    gym_env.render()
+    #while True:
+      #xpos = random.uniform(-1,1)
+      #ypos = random.uniform(-1,1)
+#
+      #old_pos = env_base._gym_env.wrapped_env.get_xy()
+      #env_base._gym_env.wrapped_env.set_xy([old_pos[0] + xpos, old_pos[1] + ypos])
+      #env_base._gym_env.render()      
+      #time.sleep(0.1)
+    
+    env_base._gym_env.render()      
     state, action, transition_type, reward, meta_reward, discount, _, _ = step_fn(sess)
     total_reward += reward * gamma_step * discount
     total_meta_reward += meta_reward * gamma_step * discount

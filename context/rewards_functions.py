@@ -22,12 +22,10 @@
     next_states, contexts)
 """
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
+from __future__ import absolute_import, division, print_function
 
-import tensorflow as tf
 import gin.tf
+import tensorflow as tf
 
 
 def summarize_stats(stats):
@@ -415,7 +413,7 @@ def normalized_distance(states,
                       rewards,
                       next_states,
                       contexts,
-                      alpha = 0.01,
+                      alpha = 0,
                       state_scales=1.0,
                       goal_scales=1.0,
                       reward_scales=1.0,
@@ -505,13 +503,13 @@ def normalized_distance(states,
 
 
 @gin.configurable
-def bowei_distance(states,
+def projection_distance(states,
                       starting_states,
                       actions,
                       rewards,
                       next_states,
                       contexts,
-                      alpha = 0.01,
+                      alpha = 0,
                       state_scales=1.0,
                       goal_scales=1.0,
                       reward_scales=1.0,
@@ -579,22 +577,21 @@ def bowei_distance(states,
   #def normalized_dist(states):
   #  dot_product = tf.matmul(states - starting_states, tf.transpose(goals - starting_states))
   #  return goals - starting_states - dot_product
-  def bowei_dist(states):
+  def projection_dist(states):
     inner = tf.multiply(states - starting_states, goals - starting_states)
     upper = tf.reduce_sum(inner, -1)
     sign = tf.sign(upper)
     
-    result = sign * tf.square(tf.math.divide(upper, tf.norm(goals - starting_states, ord=2)))
+    result = tf.math.divide(upper, tf.norm(goals - starting_states, ord=2))
 
-    term_1 = tf.square(tf.norm(states - starting_states, 2))
-    term_2 = tf.square(tf.math.divide(upper, tf.norm(goals - starting_states, ord=2)))
-    term_3 = tf.norm(goals - starting_states, ord=2)-tf.math.divide(upper, tf.norm(goals - starting_states, ord=2))
-    term_4 = tf.sqrt(term_1 - term_2)
-    return -2*term_3-term_4
+    term_1 = tf.norm(states - starting_states, 2)
+   
     
-  dist_s = bowei_dist(states)
+    return -1*term_1+result
+    
+  dist_s = projection_dist(states)
   dist_s = tf.sqrt(tf.square(dist_s) + epsilon)
-  dist_ns = bowei_dist(next_states)
+  dist_ns = projection_dist(next_states)
   
 
   ret = dist_ns, tf.to_float(dist > termination_epsilon) 

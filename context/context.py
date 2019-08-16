@@ -72,7 +72,6 @@ class Context(object):
         specs.TensorSpec(dtype=self._obs_spec.dtype, shape=shape)
         for shape in self._context_shapes
     ])
- 
     
     if context_ranges is not None:
       self.context_ranges = context_ranges

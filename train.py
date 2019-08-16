@@ -36,7 +36,6 @@ from utils import utils as uvf_utils
 from environments import create_maze_env
 # pylint: enable=unused-import
 
-
 flags = tf.app.flags
 
 FLAGS = flags.FLAGS
@@ -52,7 +51,7 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
                        environment_steps, num_episodes, num_resets,
                        episode_rewards, episode_meta_rewards,
                        store_context,
-                       disable_agent_reset):
+                       disable_agent_reset, c_min=0.75):
   """Collect experience in a tf_env into a replay_buffer using action_fn.
 
   Args:
@@ -79,15 +78,18 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
   state_repr = state_preprocess(state) # f(s)
   action = action_fn(state, context=None) # a
   
+ 
+      
+
   #n_adds = meta_replay_buffer.get_position()
   #buff_exist = tf.equal(tf.constant(-1,dtype=tf.int64), n_adds)
 
-  if meta_replay_buffer.get_num_tensors():
-    last_batch = meta_replay_buffer.gather(meta_replay_buffer.get_position())
-    states, _, actions_, rewards, discounts, next_states = last_batch[:6]
-    starting_state = tf.identity(next_states)
-  else:
-    starting_state = tf.identity(state)
+  #if meta_replay_buffer.get_num_tensors():
+  #  last_batch = meta_replay_buffer.gather(meta_replay_buffer.get_position())
+  #  states, _, actions_, rewards, discounts, next_states = last_batch[:6]
+  #  starting_state = tf.identity(next_states)
+  #else:
+  #  starting_state = tf.identity(state)
   
   #def assign_start_s():
   #  last_batch = meta_replay_buffer.gather(meta_replay_buffer.get_position())
@@ -97,9 +99,11 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
   #
   #def keep_orig():
   #  return tf_env.current_obs()
-#
+  #
   #starting_state = tf.cond(buff_exist, true_fn=assign_start_s, false_fn=keep_orig)
 
+  with tf.variable_scope(tf.get_variable_scope(), reuse=tf.AUTO_REUSE):
+      starting_state = tf.get_variable('state_var', state.shape, state.dtype)
       
   starting_state_repr = state_preprocess(starting_state)
 
@@ -174,15 +178,29 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
             transition_type, environment_steps, num_episodes),
         tf.equal(discount, 0.0))
 
+  #confidence = meta_agent.confidence(state)
+#
+  #if confidence > c_min:
+  #  next_state = meta_agent.actor_hat_net(state)  #TODO
+  #  pos = tf_env._env._gym_env.wrapped_env.get_xy()
+  #  pos[0] = next_state[0]
+  #  pos[1] = next_state[1]
+  #  tf_env._env._gym_env.wrapped_env.set_xy(pos)
+  #  upper_state_upd = tf.assign(upper_state, next_state)
+  #  lower_goal_upd = tf.assign(lower_goal, upper_agent.action(next_state))      
+  #  return tf.group(upper_state_upd,
+  #                  lower_goal_upd)
   if store_context:
     context = [tf.identity(var) + tf.zeros_like(var) for var in agent.context_vars]
     meta_context = [tf.identity(var) + tf.zeros_like(var) for var in meta_agent.context_vars]
   else:
+    # never executes
     context = []
     meta_context = []
-  
-  with tf.control_dependencies([next_state] + context + meta_context):
+  ls = [next_state] + context + meta_context
+  with tf.control_dependencies(ls):
     if disable_agent_reset:
+      assert False # never executes
       collect_experience_ops = [tf.no_op()]  # don't reset agent
     else:
       collect_experience_ops = agent.cond_begin_episode_op(

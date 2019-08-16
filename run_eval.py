@@ -28,7 +28,7 @@ import gin.tf
 # pylint: disable=unused-import
 import eval as eval_
 # pylint: enable=unused-import
-
+import tester
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 
@@ -44,6 +44,7 @@ def main(_):
   if FLAGS.params:
     gin.parse_config(FLAGS.params)
 
+ # tester.main()
   eval_.evaluate(FLAGS.checkpoint_dir, FLAGS.eval_dir)
 
 

@@ -45,7 +45,7 @@ flags.DEFINE_string('checkpoint_dir', None,
 FLAGS = flags.FLAGS
 
 
-def get_evaluate_checkpoint_fn(master, output_dir, eval_step_fns,
+def get_evaluate_checkpoint_fn(wre, master, output_dir, eval_step_fns,
                                model_rollout_fn, gamma, max_steps_per_episode,
                                num_episodes_eval, num_episodes_videos,
                                tuner_hook, generate_videos,
@@ -96,8 +96,8 @@ def get_evaluate_checkpoint_fn(master, output_dir, eval_step_fns,
     should_stop = False
     max_reward = -1e10
     max_meta_reward = -1e10
-
-    for eval_tag, (eval_step, env_base,) in sorted(eval_step_fns.items()):
+    ls = sorted(eval_step_fns.items())
+    for eval_tag, (eval_step, env_base,) in ls:
       if hasattr(env_base, 'set_sess'):
         env_base.set_sess(sess)  # set session
 
@@ -109,7 +109,7 @@ def get_evaluate_checkpoint_fn(master, output_dir, eval_step_fns,
          average_meta_reward, last_meta_reward, average_success,
          states, actions) = eval_utils.compute_average_reward(
              sess, env_base, eval_step, gamma, max_steps_per_episode,
-             num_episodes_eval)
+             num_episodes_eval, wre)
         tf.logging.info('[%s] Average reward = %f', eval_tag, average_reward)
         tf.logging.info('[%s] Last reward = %f', eval_tag, last_reward)
         tf.logging.info('[%s] Average meta reward = %f', eval_tag, average_meta_reward)
@@ -425,7 +425,7 @@ def evaluate(checkpoint_dir,
   tf.logging.info('Evaluating policies at %s', checkpoint_dir)
   tf.logging.info('Running episodes for max %d steps', max_steps_per_episode)
 
-  evaluate_checkpoint_fn = get_evaluate_checkpoint_fn(
+  evaluate_checkpoint_fn = get_evaluate_checkpoint_fn(wrapped_environment,
       '', eval_dir, eval_step_fns, model_rollout_fn, gamma,
       max_steps_per_episode, num_episodes_eval, num_episodes_videos, tuner_hook,
       generate_videos, generate_summaries, video_settings)

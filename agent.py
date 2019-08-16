@@ -504,6 +504,12 @@ class MetaAgentCore(UvfAgentCore):
     Raises:
       ValueError: If 'dqda_clipping' is < 0.
     """
+    self.ACTOR_HAT_NET_SCOPE = 'actor_hat_net'
+    self.CRITIC_HAT_NET_SCOPE = 'critic_hat_net'
+    self._actor_hat_net = tf.make_template(
+        self.ACTOR_HAT_NET_SCOPE, self.actor_net, create_scope_now_=True)
+    self._critic_hat_net = tf.make_template(
+        self.CRITIC_HAT_NET_SCOPE, self.critic_net, create_scope_now_=True)
     self._step_cond_fn = step_cond_fn
     self._reset_episode_cond_fn = reset_episode_cond_fn
     self._reset_env_cond_fn = reset_env_cond_fn
@@ -559,6 +565,57 @@ class MetaAgentCore(UvfAgentCore):
         tf.reduce_sum(tf.abs(actions[:, self._k:]), -1), 0)
     loss = self.BASE_AGENT_CLASS.actor_loss(self, states)
     return regularizer + loss
+
+  def critic_hat_net(self, states, actions):
+        """Returns the output of the critic hat network (Q')"""
+        self._validate_states(states)
+        self._validate_actions(actions)
+        return self._critic_hat_net(states, actions)
+
+  def actor_hat_net(self, states):
+      """Returns the states that gives the highest Q value."""
+      self._validate_states(states)
+      return self._actor_hat_net(states, self._action_spec)
+  
+  def hat_value(self, states):
+      """one-step computes the Q value using output from actor net."""
+      actions = self.best_next_states(states)
+      return self.critic_hat_net(states, actions)
+
+  def critic_hat_loss(self, states, actions, rewards, discounts,
+                next_states):
+      """Returns a 0-rank tensor representing the loss function for the critic net."""
+      ys = rewards + discounts * self.hat_value(next_states)
+      q_vals = self.critic_hat_net(states, actions)
+      return self._td_errors_loss(ys, q_vals)
+  
+  def actor_hat_loss(self, states):
+      """Returns a 0-rank tensor representing the loss function for the actor net."""
+      self._validate_states(states)
+      actions = self.actor_net(states, stop_gradients=False)
+      critic_values = self.critic_net(states, actions)
+      q_values = self.critic_function(critic_values, states)
+      dqda = tf.gradients([q_values], [actions])[0]
+      actions_norm = tf.norm(actions)
+      actions_norm *= self._actions_regularizer
+      return slim.losses.mean_squared_error(tf.stop_gradient(dqda + actions),
+                                            actions,
+                                            scope='actor_loss') + actions_norm
+  def confidence(self, starting_state, state, alpha=0.1):
+      
+      def dist(state1, state2):
+          return tf.norm(state1 - state2, ord=2)
+      
+      next_state = self.actor_hat_net(state)
+      Q_prime_val = self.critic_hat_net(state, next_state)
+      goal = self.actor_net(state)
+      Q_val = self.critic_net(state, goal)
+      confidence = tf.divide((Q_val - Q_prime_val), Q_val)
+      ns_g_dist = dist(next_state, goal)
+      ss_g_dist = dist(starting_state, goal)
+      dist_term = alpha * tf.divide(ns_g_dist, ss_g_dist)
+      confidence = tf.constant(1.0) - (tf.square(confidence) + dist_term)
+      return confidence
 
 
 @gin.configurable
@@ -678,7 +735,6 @@ def huber(x, kappa=0.1):
   return (0.5 * tf.square(x) * tf.to_float(tf.abs(x) <= kappa) +
           kappa * (tf.abs(x) - 0.5 * kappa) * tf.to_float(tf.abs(x) > kappa)
           ) / kappa
-
 
 @gin.configurable()
 class StatePreprocess(object):

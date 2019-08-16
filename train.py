@@ -713,7 +713,7 @@ def train_uvf(train_dir,
   local_init_op = tf.local_variables_initializer()
   init_targets_op = tf.group(uvf_agent.update_targets(1.0),
                              meta_agent.update_targets(1.0))
-
+   #will be called in the slim
   def initialize_training_fn(sess):
     """Initialize training function."""
     sess.run(local_init_op)
@@ -731,6 +731,7 @@ def train_uvf(train_dir,
 
   train_saver = tf.train.Saver(max_to_keep=2, sharded=True)
   tf.logging.info('train dir: %s', train_dir)
+  #slim.learning.train is the main training process of the networks
   return slim.learning.train(
       train_ops,
       train_dir,

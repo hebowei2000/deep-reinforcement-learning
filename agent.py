@@ -21,6 +21,7 @@ import gin.tf
 from agents import ddpg_agent
 # pylint: disable=unused-import
 import cond_fn
+import math
 from utils import utils as uvf_utils
 from context import gin_imports
 # pylint: enable=unused-import
@@ -480,6 +481,7 @@ class MetaAgentCore(UvfAgentCore):
                tf_env,
                tf_context,
                sub_context,
+               completion_net_class,
                step_cond_fn=cond_fn.env_transition,
                reset_episode_cond_fn=cond_fn.env_restart,
                reset_env_cond_fn=cond_fn.false_fn,
@@ -504,12 +506,12 @@ class MetaAgentCore(UvfAgentCore):
     Raises:
       ValueError: If 'dqda_clipping' is < 0.
     """
-    self.ACTOR_HAT_NET_SCOPE = 'actor_hat_net'
-    self.CRITIC_HAT_NET_SCOPE = 'critic_hat_net'
-    self._actor_hat_net = tf.make_template(
-        self.ACTOR_HAT_NET_SCOPE, self.actor_net, create_scope_now_=True)
-    self._critic_hat_net = tf.make_template(
-        self.CRITIC_HAT_NET_SCOPE, self.critic_net, create_scope_now_=True)
+    self.REWARD_NET_SCOPE = 'reward_net'
+    self.COMPLETION_NET_SCOPE = 'completion_net'
+    self._reward_net = tf.make_template(
+        self.REWARD_NET_SCOPE, self.critic_net, create_scope_now_=True)   # TODO: change net config
+    self._completion_net = tf.make_template(
+        self.COMPLETION_NET_SCOPE, completion_net_class, create_scope_now_=True)  # TODO: change net config
     self._step_cond_fn = step_cond_fn
     self._reset_episode_cond_fn = reset_episode_cond_fn
     self._reset_env_cond_fn = reset_env_cond_fn
@@ -550,6 +552,9 @@ class MetaAgentCore(UvfAgentCore):
         action_fn, stddev,
         clip=True, global_step=global_step)
     return noisy_action_fn
+  
+  def set_mini_buffer(self, mini_buffer):
+    self.mini_buffer = mini_buffer
 
   def actor_loss(self, states, actions, rewards, discounts, next_states):
     """Returns the next action for the state.
@@ -566,41 +571,42 @@ class MetaAgentCore(UvfAgentCore):
     loss = self.BASE_AGENT_CLASS.actor_loss(self, states)
     return regularizer + loss
 
-  def critic_hat_net(self, states, actions):
-        """Returns the output of the critic hat network (Q')"""
-        self._validate_states(states)
-        self._validate_actions(actions)
-        return self._critic_hat_net(states, actions)
+  def completion(self, states, meta_actions):
+      """Returns the output of the completion network """
+      self._validate_states(states)
+      self._validate_actions(meta_actions)
+      return self._completion_net(states, meta_actions)  # =(alpha, theta)
 
-  def actor_hat_net(self, states):
+  def compute_next_state(self, state, meta_action, alpha, theta):
+      r = alpha * (meta_action[:2] - state[:2])
+      next_state = tf.identity(state)
+      next_state[:2] = [r * tf.math.cos(math.pi * theta), r * tf.math.sin(math.pi * theta)]
+      return next_state
+
+  def reward_net(self, states, meta_actions, next_states):
       """Returns the states that gives the highest Q value."""
-      self._validate_states(states)
-      return self._actor_hat_net(states, self._action_spec)
+      self._validate_states(next_states)
+      return self._reward_net(next_states, self._action_spec)  # TODO: representation?
   
-  def hat_value(self, states):
-      """one-step computes the Q value using output from actor net."""
-      actions = self.best_next_states(states)
-      return self.critic_hat_net(states, actions)
-
-  def critic_hat_loss(self, states, actions, rewards, discounts,
+  def reward_loss(self, states, meta_actions, rewards, discounts,
                 next_states):
-      """Returns a 0-rank tensor representing the loss function for the critic net."""
-      ys = rewards + discounts * self.hat_value(next_states)
-      q_vals = self.critic_hat_net(states, actions)
-      return self._td_errors_loss(ys, q_vals)
+      """Returns a 0-rank tensor representing the loss function for the critic net. """
+      target = rewards
+      predicted_val = self.reward_net(states, meta_actions, next_states)
+      return self._td_errors_loss(predicted_val, target)
   
-  def actor_hat_loss(self, states):
+  def completion_loss(self, states, meta_actions, next_states):
       """Returns a 0-rank tensor representing the loss function for the actor net."""
-      self._validate_states(states)
-      actions = self.actor_net(states, stop_gradients=False)
-      critic_values = self.critic_net(states, actions)
-      q_values = self.critic_function(critic_values, states)
-      dqda = tf.gradients([q_values], [actions])[0]
-      actions_norm = tf.norm(actions)
-      actions_norm *= self._actions_regularizer
-      return slim.losses.mean_squared_error(tf.stop_gradient(dqda + actions),
-                                            actions,
-                                            scope='actor_loss') + actions_norm
+      # TODO: representation?
+      self._validate_states(states) 
+      predicted_val = self.completion(states, meta_actions, next_states)
+      r = tf.norm((next_states - states)[:2], ord=2)
+      goal_dist = tf.norm((meta_actions - states)[:2], ord=2)
+      target_alpha = r / goal_dist
+      target_theta = tf.math.acos((next_states[0] - states[0]) / r) 
+      target = (target_alpha, target_theta)
+      return self._td_errors_loss(predicted_val, target)
+  
   def confidence(self, starting_state, state, alpha=0.1):
       
       def dist(state1, state2):

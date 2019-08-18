@@ -123,6 +123,8 @@ class DdpgAgent(object):
     Raises:
       ValueError: If 'dqda_clipping' is < 0.
     """
+    self.actor_net_class = actor_net
+    self.critic_net_class = critic_net
     self._observation_spec = observation_spec[0]
     self._action_spec = action_spec[0]
     self._state_shape = tf.TensorShape([None]).concatenate(
@@ -136,10 +138,6 @@ class DdpgAgent(object):
         self.ACTOR_NET_SCOPE, actor_net, create_scope_now_=True)
     self._critic_net = tf.make_template(
         self.CRITIC_NET_SCOPE, critic_net, create_scope_now_=True)
-    self._actor_hat_net = tf.make_template(
-          self.ACTOR_HAT_NET_SCOPE, actor_net, create_scope_now_=True)
-    self._critic_hat_net = tf.make_template(
-          self.CRITIC_HAT_NET_SCOPE, critic_net, create_scope_now_=True)
     self._target_actor_net = tf.make_template(
         self.TARGET_ACTOR_NET_SCOPE, actor_net, create_scope_now_=True)
     self._target_critic_net = tf.make_template(
@@ -190,21 +188,6 @@ class DdpgAgent(object):
     agent_action = self.action(state)
     agent_action += tf.random_normal(tf.shape(agent_action)) * stddev
     return utils.clip_to_spec(agent_action, self._action_spec)
-
-
-
-  def actor_hat_net(self, states):
-    """Returns the output of the actor hat network (mu')"""
-    self._validate_states(states)
-    return self._actor_hat_net(states, self._action_spec)
-
-
-  def critic_hat_net(self, states, actions):
-    """Returns the output of the critic hat network (Q')"""
-    self._validate_states(states)
-    self._validate_actions(actions)
-    return self._critic_hat_net(states, actions)
-
 
   def actor_net(self, states, stop_gradients=False):
     """Returns the output of the actor network.
@@ -575,6 +558,8 @@ class TD3Agent(DdpgAgent):
     Raises:
       ValueError: If 'dqda_clipping' is < 0.
     """
+    self.actor_net_class = actor_net
+    self.critic_net_class = critic_net
     self._observation_spec = observation_spec[0]
     self._action_spec = action_spec[0]
     self._state_shape = tf.TensorShape([None]).concatenate(

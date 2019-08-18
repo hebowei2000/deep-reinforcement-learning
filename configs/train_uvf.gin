@@ -13,6 +13,7 @@ train_uvf.state_preprocess_class = %STATE_PREPROCESS_CLASS
 train_uvf.inverse_dynamics_class = %INVERSE_DYNAMICS_CLASS
 train_uvf.replay_buffer = @agent/CircularBuffer()
 train_uvf.meta_replay_buffer = @meta/CircularBuffer()
+train_uvf.mini_buffer = @meta/CircularBuffer()
 train_uvf.critic_optimizer = @critic/AdamOptimizer()
 train_uvf.actor_optimizer = @actor/AdamOptimizer()
 train_uvf.meta_critic_optimizer = @meta_critic/AdamOptimizer()

@@ -610,7 +610,7 @@ class MetaAgentCore(UvfAgentCore):
 
   def completion(self, states, meta_actions):
       """Returns the output of the completion network """
-      super(MetaAgentCore, self)._validate_states(states)
+      self._validate_states(states)
       super(MetaAgentCore, self)._validate_actions(meta_actions) #TODO FIXME
       return self._completion_net(states, meta_actions)  # =(alpha, theta)
 
@@ -621,7 +621,7 @@ class MetaAgentCore(UvfAgentCore):
       self._validate_states(states) 
       predicted_val = self.completion(states, meta_actions)
       target = self.inv_completion(states, meta_actions, next_states)
-      return self._td_errors_loss(predicted_val, target)  #TODO: change loss
+      return self._td_errors_loss(predicted_val, target)  
   
   def confidence(self, state, goal):
       num_tensors = self.mini_buffer.get_num_tensors()

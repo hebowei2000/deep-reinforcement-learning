@@ -75,11 +75,14 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
   def increment_step():
     return environment_steps.assign_add(1)
 
-  def increment_ten_steps():
-    return environment_steps.assign_add(10)
+  def increment_many_steps():
+    return environment_steps.assign_add(agent.tf_context.meta_action_every_n)
 
   def increment_episode():
     return num_episodes.assign_add(1)
+
+  def increment_leaps():
+    return num_leaps.assign_add(1) #TODO: add in train_uvf
 
   def increment_reset():
     return num_resets.assign_add(1)
@@ -123,17 +126,19 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
   with tf.variable_scope(tf.get_variable_scope(), reuse=tf.AUTO_REUSE):
       starting_state = tf.get_variable('state_var', state.shape, state.dtype)
 
-  confidence = meta_agent.confidence(state)
+  confidence = meta_agent.confidence(state, context)#TODO: fix me
   
-
+#TODO: only leap when remainder is zero
+#TODO: add noise to leapt experience
+#TODO: decide whether use the leapt experience to train
   if confidence > c_min:
     ep_upd = global_step >= max_steps_per_episode 
     (alpha, theta) = meta_agent.completion(state, meta_action)  
-    next_states = meta_agent.compute_next_state(state, meta_action, alpha, theta)
-    increment_step_op = tf.cond(ep_upd, increment_ten_steps, no_op_int)
+    next_state = meta_agent.compute_next_state(state, meta_action, alpha, theta)
+    increment_step_op = tf.cond(ep_upd, increment_many_steps, no_op_int)
     increment_ep_op = tf.cond(ep_upd, increment_episode, no_op_int)
     increment_op = [increment_step_op, increment_ep_op]
-    meta_transition = [state, meta_action]
+    meta_transition = [state, meta_action] #TODO:fix me
     collect_experience_op = meta_replay_buffer.add(meta_transition)
     pos = tf_env._env._gym_env.wrapped_env.get_xy()
     pos[0] = next_state[0]
@@ -287,7 +292,7 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
       meta_transition += meta_context_var + list(meta_agent.context_vars)
 
     meta_step_cond = tf.squeeze(tf.logical_and(step_cond, tf.logical_or(next_reset_episode_cond, meta_end)))
-
+    #TODO: update the short buffer under the condition of c steps completed 
     collect_experience_op = tf.group(
         replay_buffer.maybe_add(transition, step_cond),
         meta_replay_buffer.maybe_add(meta_transition, meta_step_cond),
@@ -330,7 +335,7 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
       meta_action_var_upd,
       *meta_context_var_upd)
 
-
+#TODO: relable s_t+c and reward
 def sample_best_meta_actions(state_reprs, next_state_reprs, prev_meta_actions,
                              low_states, low_actions, low_state_reprs,
                              inverse_dynamics, uvf_agent, k=10):
@@ -406,8 +411,8 @@ def train_uvf(train_dir,
               load_path=LOAD_PATH):
   """Train an agent."""
   tf_env = create_maze_env.TFPyEnvironment(environment)
-  observation_spec = [tf_env.observation_spec()] #TODO:
-  action_spec = [tf_env.action_spec()] #TODO:
+  observation_spec = [tf_env.observation_spec()]
+  action_spec = [tf_env.action_spec()] 
 
   max_steps_per_episode = max_steps_per_episode or tf_env.pyenv.max_episode_steps # environment specification
 
@@ -456,6 +461,7 @@ def train_uvf(train_dir,
   num_episodes = tf.Variable(0, dtype=tf.int64, name='num_episodes')
   num_resets = tf.Variable(0, dtype=tf.int64, name='num_resets')
   num_updates = tf.Variable(0, dtype=tf.int64, name='num_updates')
+  num_leaps = tf.Variable(0, dtype=tf.int64, name='num_leaps')
   num_meta_updates = tf.Variable(0, dtype=tf.int64, name='num_meta_updates')
   episode_rewards = tf.Variable([0.] * 100, name='episode_rewards')
   episode_meta_rewards = tf.Variable([0.] * 100, name='episode_meta_rewards')
@@ -466,6 +472,7 @@ def train_uvf(train_dir,
       ('num_episodes', num_episodes),
       ('num_resets', num_resets),
       ('num_updates', num_updates),
+      ('num_leaps', num_leaps),
       ('num_meta_updates', num_meta_updates),
       ('replay_buffer_adds', replay_buffer.get_num_adds()),
       ('meta_replay_buffer_adds', meta_replay_buffer.get_num_adds()),
@@ -475,6 +482,7 @@ def train_uvf(train_dir,
                     tf.reduce_mean(episode_rewards[1:]))
   tf.summary.scalar('avg_episode_meta_rewards',
                     tf.reduce_mean(episode_meta_rewards[1:]))
+                    #TODO: leap num
   tf.summary.histogram('episode_rewards', episode_rewards[1:])
   tf.summary.histogram('episode_meta_rewards', episode_meta_rewards[1:])
 
@@ -527,7 +535,7 @@ def train_uvf(train_dir,
 
   train_op_list = []
   repr_train_op = tf.constant(0.0)
-  for mode in ['meta', 'nometa']:
+  for mode in ['meta', 'nometa']:#TODO:update network reward and completion in the mode of meta
     if mode == 'meta':
       agent = meta_agent
       buff = meta_replay_buffer

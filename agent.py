@@ -24,8 +24,10 @@ import cond_fn
 import math
 from utils import utils as uvf_utils
 from context import gin_imports
+from agents import additional_networks as additional_networks
 # pylint: enable=unused-import
 slim = tf.contrib.slim
+
 
 
 @gin.configurable
@@ -97,6 +99,7 @@ class UvfAgentCore(object):
   def meta_agent(self):
     return self._meta_agent
 
+  
   def actor_loss(self, states, actions, rewards, discounts,
                  next_states):
     """Returns the next action for the state.
@@ -481,10 +484,11 @@ class MetaAgentCore(UvfAgentCore):
                tf_env,
                tf_context,
                sub_context,
-               completion_net_class,
                step_cond_fn=cond_fn.env_transition,
                reset_episode_cond_fn=cond_fn.env_restart,
                reset_env_cond_fn=cond_fn.false_fn,
+               reward_net=additional_networks.reward_net,
+               completion_net=additional_networks.completion_net,
                metrics=None,
                actions_reg=0.,
                k=2,
@@ -509,9 +513,9 @@ class MetaAgentCore(UvfAgentCore):
     self.REWARD_NET_SCOPE = 'reward_net'
     self.COMPLETION_NET_SCOPE = 'completion_net'
     self._reward_net = tf.make_template(
-        self.REWARD_NET_SCOPE, self.critic_net, create_scope_now_=True)   # TODO: change net config
+        self.REWARD_NET_SCOPE, reward_net, create_scope_now_=True) 
     self._completion_net = tf.make_template(
-        self.COMPLETION_NET_SCOPE, completion_net_class, create_scope_now_=True)  # TODO: change net config
+        self.COMPLETION_NET_SCOPE, completion_net, create_scope_now_=True)
     self._step_cond_fn = step_cond_fn
     self._reset_episode_cond_fn = reset_episode_cond_fn
     self._reset_env_cond_fn = reset_env_cond_fn
@@ -571,22 +575,31 @@ class MetaAgentCore(UvfAgentCore):
     loss = self.BASE_AGENT_CLASS.actor_loss(self, states)
     return regularizer + loss
 
-  def completion(self, states, meta_actions):
-      """Returns the output of the completion network """
-      self._validate_states(states)
-      self._validate_actions(meta_actions)
-      return self._completion_net(states, meta_actions)  # =(alpha, theta)
-
+  
   def compute_next_state(self, state, meta_action, alpha, theta):
-      r = alpha * (meta_action[:2] - state[:2])
-      next_state = tf.identity(state)
-      next_state[:2] = [r * tf.math.cos(math.pi * theta), r * tf.math.sin(math.pi * theta)]
-      return next_state
+      """
+      Given state and meta-action, computes the predicted next_state
+      using alpha and theta. 
+      """
+      r = alpha * tf.norm(meta_action[:2] - state[:2], ord=2)
+      xy = [r * tf.math.cos(math.pi * theta), r * tf.math.sin(math.pi * theta)]
+      next_state = state + tf.concat([xy, state[2:]], axis=0)
+      return next_state 
+
+  def inv_completion(self, state, meta_action, next_state):
+      """
+      Given state and meta-action, computes alpha and theta using next_state.
+      """
+      ns_dist = tf.norm((next_state[:2] - state[:2]), ord=2)
+      goal_dist = tf.norm((meta_action[:2] - state[:2]), ord=2)
+      target_alpha = ns_dist / goal_dist
+      target_theta = tf.math.acos((next_state[0] - state[0]) / ns_dist) / math.pi
+      return target_alpha, target_theta
 
   def reward_net(self, states, meta_actions, next_states):
       """Returns the states that gives the highest Q value."""
-      self._validate_states(next_states)
-      return self._reward_net(next_states, self._action_spec)  # TODO: representation?
+      self._validate_states(states)
+      return self._reward_net(states, meta_actions)  # TODO: representation?
   
   def reward_loss(self, states, meta_actions, rewards, discounts,
                 next_states):
@@ -594,34 +607,43 @@ class MetaAgentCore(UvfAgentCore):
       target = rewards
       predicted_val = self.reward_net(states, meta_actions, next_states)
       return self._td_errors_loss(predicted_val, target)
-  
+
+  def completion(self, states, meta_actions):
+      """Returns the output of the completion network """
+      super(MetaAgentCore, self)._validate_states(states)
+      super(MetaAgentCore, self)._validate_actions(meta_actions) #TODO FIXME
+      return self._completion_net(states, meta_actions)  # =(alpha, theta)
+
+
   def completion_loss(self, states, meta_actions, next_states):
       """Returns a 0-rank tensor representing the loss function for the actor net."""
       # TODO: representation?
       self._validate_states(states) 
-      predicted_val = self.completion(states, meta_actions, next_states)
-      r = tf.norm((next_states - states)[:2], ord=2)
-      goal_dist = tf.norm((meta_actions - states)[:2], ord=2)
-      target_alpha = r / goal_dist
-      target_theta = tf.math.acos((next_states[0] - states[0]) / r) 
-      target = (target_alpha, target_theta)
-      return self._td_errors_loss(predicted_val, target)
+      predicted_val = self.completion(states, meta_actions)
+      target = self.inv_completion(states, meta_actions, next_states)
+      return self._td_errors_loss(predicted_val, target)  #TODO: change loss
   
-  def confidence(self, starting_state, state, alpha=0.1):
-      
-      def dist(state1, state2):
-          return tf.norm(state1 - state2, ord=2)
-      
-      next_state = self.actor_hat_net(state)
-      Q_prime_val = self.critic_hat_net(state, next_state)
-      goal = self.actor_net(state)
-      Q_val = self.critic_net(state, goal)
-      confidence = tf.divide((Q_val - Q_prime_val), Q_val)
-      ns_g_dist = dist(next_state, goal)
-      ss_g_dist = dist(starting_state, goal)
-      dist_term = alpha * tf.divide(ns_g_dist, ss_g_dist)
-      confidence = tf.constant(1.0) - (tf.square(confidence) + dist_term)
-      return confidence
+  def confidence(self, state, goal):
+      num_tensors = self.mini_buffer.get_num_tensors()
+      conf = 0
+      if num_tensors :
+        batch = self.mini_buffer.get_random_batch(num_tensors)
+        [states, meta_actions, next_states] = batch
+        [predicted_alphas, predicted_thetas] = self.completion(states, meta_actions)
+        [actual_alphas, actual_thetas] = self.inv_completion(states, meta_actions, next_states)
+        for i in range(num_tensors):
+          batch[i].append([predicted_alphas, predicted_thetas])
+          batch[i].append([actual_alphas, actual_thetas])
+          batch[i].append(tf.norm(states[i] - state, ord=2))
+        sorted_batch = tf.sort(batch)  # sorts according to last axis
+        weight_base = (num_tensors + num_tensors ** 2) / 2 
+        for i in range(num_tensors):
+          [predicted_alpha, predicted_theta] = sorted_batch[i][-3]
+          [actual_alpha, actual_theta] = sorted_batch[i][-2]
+          conf += (tf.abs(predicted_alpha - actual_alpha) + 
+              tf.abs(predicted_theta - actual_theta)) / weight_base * i
+
+      return conf
 
 
 @gin.configurable

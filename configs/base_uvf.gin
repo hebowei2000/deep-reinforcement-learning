@@ -45,10 +45,13 @@ meta/ddpg_actor_net.images = %IMAGES
 # completion_net
 COMPLETION_HIDDEN_SIZE_1 = 300
 COMPLETION_HIDDEN_SIZE_2 = 300
-meta/ddpg_actor_net.hidden_layers = (%COMPLETION_HIDDEN_SIZE_1, %COMPLETION_HIDDEN_SIZE_2)
-meta/ddpg_actor_net.activation_fn = @tf.nn.relu
-meta/ddpg_actor_net.zero_obs = False
-meta/ddpg_actor_net.images = %IMAGES
+meta/completion_net.states_hidden_layers = (%REWARD_HIDDEN_SIZE_1,)
+meta/completion_net.actions_hidden_layers = None
+meta/completion_net.joint_hidden_layers = (%REWARD_HIDDEN_SIZE_2,)
+meta/completion_net.weight_decay = 0.0
+meta/completion_net.activation_fn = @tf.nn.relu
+meta/completion_net.zero_obs = False
+meta/completion_net.images = %IMAGES
 
 
 # critic_net
@@ -72,13 +75,13 @@ meta/ddpg_critic_net.images = %IMAGES
 # reward_net
 REWARD_HIDDEN_SIZE_1 = 300
 REWARD_HIDDEN_SIZE_2 = 300
-meta/ddpg_critic_hat_net.states_hat_hidden_layers = (%REWARD_HIDDEN_SIZE_1,)
-meta/ddpg_critic_hat_net.next_states_hat_hidden_layers = None
-meta/ddpg_critic_hat_net.joint_hat_hidden_layers = (%REWARD_HIDDEN_SIZE_2,)
-meta/ddpg_critic_hat_net.weight_decay = 0.0
-meta/ddpg_critic_hat_net.activation_fn = @tf.nn.relu
-meta/ddpg_critic_hat_net.zero_obs = False
-meta/ddpg_critic_hat_net.images = %IMAGES
+meta/reward_net.states_hidden_layers = (%REWARD_HIDDEN_SIZE_1,)
+meta/reward_net.actions_hidden_layers = None
+meta/reward_net.joint_hidden_layers = (%REWARD_HIDDEN_SIZE_2,)
+meta/reward_net.weight_decay = 0.0
+meta/reward_net.activation_fn = @tf.nn.relu
+meta/reward_net.zero_obs = False
+meta/reward_net.images = %IMAGES
 
 tf.losses.huber_loss.delta = 1.0
 # Sample action

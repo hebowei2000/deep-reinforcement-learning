@@ -23,7 +23,7 @@
             "name": "Python: run_train.py",
             "type": "python",
             "request": "launch",
-            "program": "${file}",
+            "program": "/home/he/research/deep-reinforcement-learning/run_train.py",
             "console": "integratedTerminal",
             "args": [
                 "--train_dir=/home/he/tmp/hiro_orig/ant_maze/base_uvf/volatile_test/train",

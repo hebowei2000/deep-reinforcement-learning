@@ -71,7 +71,7 @@ class AntEnv(mujoco_env.MujocoEnv, utils.EzPickle):
     survive_reward = 1.0
     reward = forward_reward - ctrl_cost + survive_reward
     state = self.state_vector()
-    done = False
+    done = False    # never done
     ob = self._get_obs()
     return ob, reward, done, dict(
         reward_forward=forward_reward,

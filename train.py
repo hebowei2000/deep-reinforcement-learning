@@ -47,11 +47,14 @@ LOAD_PATH = None
 
 def collect_experience(tf_env, agent, meta_agent, state_preprocess, 
                        replay_buffer, meta_replay_buffer,
-                       action_fn, meta_action_fn,
+                       action_fn, meta_action_fn, num_leaps,
                        environment_steps, num_episodes, num_resets,
                        episode_rewards, episode_meta_rewards,
                        store_context, max_steps_per_episode,
-                       disable_agent_reset, c_min=0.75):
+                       disable_agent_reset, c_min, 
+                       reward_optimizer, completion_optimizer,
+                       global_step, update_ops, summarize_gradients,
+                        clip_gradient_norm,):
   """Collect experience in a tf_env into a replay_buffer using action_fn.
 
   Args:
@@ -82,7 +85,7 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
     return num_episodes.assign_add(1)
 
   def increment_leaps():
-    return num_leaps.assign_add(1) #TODO: add in train_uvf
+    return num_leaps.assign_add(1) 
 
   def increment_reset():
     return num_resets.assign_add(1)
@@ -112,6 +115,7 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
   state_repr = state_preprocess(state) # f(s)
   
   """ start temporal leap """
+  meta_action_every_n = agent.tf_context.meta_action_every_n
   
   if store_context:
     context = [tf.identity(var) + tf.zeros_like(var) for var in agent.context_vars]
@@ -122,191 +126,243 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
     meta_context = []
 
   meta_action = tf.to_float(tf.concat(context, -1))
+  #meta_action = context
   
   with tf.variable_scope(tf.get_variable_scope(), reuse=tf.AUTO_REUSE):
       starting_state = tf.get_variable('state_var', state.shape, state.dtype)
+      meta_action_var = tf.get_variable('meta_action_var',
+                                          meta_action.shape, meta_action.dtype)
 
-  confidence = meta_agent.confidence(state, context)#TODO: fix me
+  confidence = meta_agent.confidence(state, context[0])
   
-#TODO: only leap when remainder is zero
-#TODO: add noise to leapt experience
-#TODO: decide whether use the leapt experience to train
-  if confidence > c_min:
-    ep_upd = global_step >= max_steps_per_episode 
-    (alpha, theta) = meta_agent.completion(state, meta_action)  
-    next_state = meta_agent.compute_next_state(state, meta_action, alpha, theta)
+  is_new_goal = environment_steps % meta_action_every_n == 0
+  
+  
+  
+  def leap():
+
+    ep_upd = agent._every_n_steps(None, None, None, None, environment_steps, None) 
+    #meta_action_var = meta_action
+    # predict completion and compute next_state
+    ret = tf.reduce_sum(meta_agent.completion(tf.expand_dims(state, 0), 
+                      tf.expand_dims(meta_action_var, 0)),0) 
+    alpha = ret[0]
+    theta = ret[1]
+    next_state = meta_agent.compute_next_state(state, meta_action_var, alpha, theta)
+    
     increment_step_op = tf.cond(ep_upd, increment_many_steps, no_op_int)
     increment_ep_op = tf.cond(ep_upd, increment_episode, no_op_int)
     increment_op = [increment_step_op, increment_ep_op]
-    meta_transition = [state, meta_action] #TODO:fix me
-    collect_experience_op = meta_replay_buffer.add(meta_transition)
-    pos = tf_env._env._gym_env.wrapped_env.get_xy()
-    pos[0] = next_state[0]
-    pos[1] = next_state[1]
-    tf_env._env._gym_env.wrapped_env.set_xy(pos)
-    low_level_context = meta_action_fn(next_state, context=None)
-    agent_context_upd = [tf.assign(var, value)
-               for var, value in zip(agent.context_vars, low_level_context)]
-    state_var_upd = tf.assign(starting_state, next_state)
-    return tf.group(collect_experience_op, state_var_upd, *agent_context_upd)
-  
-# store rewards?  
-
-  #n_adds = meta_replay_buffer.get_position()
-  #buff_exist = tf.equal(tf.constant(-1,dtype=tf.int64), n_adds)
-
-  #if meta_replay_buffer.get_num_tensors():
-  #  last_batch = meta_replay_buffer.gather(meta_replay_buffer.get_position())
-  #  states, _, actions_, rewards, discounts, next_states = last_batch[:6]
-  #  starting_state = tf.identity(next_states)
-  #else:
-  #  starting_state = tf.identity(state)
-  
-  #def assign_start_s():
-  #  last_batch = meta_replay_buffer.gather(meta_replay_buffer.get_position())
-  #  states, _, actions, rewards, discounts, next_states = last_batch[:6]
-  #  starting_state = tf.identity(next_states)
-  #  return starting_state
-  #
-  #def keep_orig():
-  #  return tf_env.current_obs()
-  #
-  #starting_state = tf.cond(buff_exist, true_fn=assign_start_s, false_fn=keep_orig)
-  
-  
-  
-  action = action_fn(state, context=None) # a
-
-  starting_state_repr = state_preprocess(starting_state)
-
-  
-  
-  
-  
-  
-  
-  
-
-  with tf.control_dependencies([state,starting_state]):
-    transition_type, reward, discount = tf_env.step(action)  # takes step and enters new state
     
-  # tf.bool that tells if the transition_type is TRANSITION or FINAL_TRANSITION.
-  step_cond = agent.step_cond_fn(state, action,       
-                                 transition_type,
-                                 environment_steps, num_episodes)
+    # experience for meta_buffer
+    meta_transition = [state, meta_action_var] 
+    buffer_push_op = meta_replay_buffer.add(meta_transition)
+    #pos = tf_env._env._gym_env.wrapped_env.get_xy()
+    pos = next_state[:2]
+    tf_env._env._gym_env.wrapped_env.set_xy(pos)
+    
 
-  # tf.bool that tells if the transition_type is RESTARTING.
-  reset_episode_cond = agent.reset_episode_cond_fn(   
-      state, action,
-      transition_type, environment_steps, num_episodes)
+    with tf.control_dependencies([increment_op]):
+      # increment time step 
+      tf_env._env._gym_env.t += meta_action_every_n
+      agent.tf_context.t += meta_action_every_n
+    
+    def add_gaussian_noise(data, variance):
+      stddev = tf.sqrt(variance)
+      noise = tf.random_normal(shape=tf.shape(data), mean=0.0, stddev=stddev, dtype=tf.float32) 
+      return data + noise
 
-  # tf.bool that is always false
-  reset_env_cond = agent.reset_env_cond_fn(state, action,
-                                           transition_type,
-                                           environment_steps, num_episodes)
+    with tf.control_dependencies(buffer_push_op):
+      comp_train_op = None
+      if meta_agent.mini_buffer.buffer_size == meta_agent.mini_buffer.get_num_tensors:
+        # use popped to optimize completion net
+        popped = tf.identity(meta_agent.mini_buffer._tensors[meta_agent.mini_buffer.get_position()])
+        target = popped[-1]  # [alpha, theta]
+        
+        comp_loss = meta_agent.completion_loss(state, meta_action_var, target)
+       
+        comp_train_op = slim.learning.create_train_op(
+          comp_loss,
+          completion_optimizer, #
+          global_step=global_step,
+          update_ops=None,
+          summarize_gradients=summarize_gradients,
+          clip_gradient_norm=clip_gradient_norm,
+          variables_to_train=meta_agent.get_trainable_completion_vars(),)
 
-  # if transition_type is TRANSITION or FINAL_TRANSITION, add one to environment_steps, otherwise do nothing.                               
-  increment_step_op = tf.cond(step_cond, increment_step, no_op_int)
+      # experience for mini_buffer
+      meta_transition.append(add_gaussian_noise([alpha, theta], confidence))
+      buffer_push_op = meta_agent.mini_buffer.add(meta_transition) 
 
-  # if transition_type is RESTARTING, add one to num_episodes, otherwise do nothing.                              
-  increment_episode_op = tf.cond(reset_episode_cond, increment_episode,
-                                 no_op_int)
+    with tf.control_dependencies(buffer_push_op):
+      # manually set new goal for low level agent 
+      # TODO: experiment: does the agent take care of itself? 
+      low_level_context = meta_action_fn(next_state, context=None)
+      agent_context_upd = [tf.assign(var, value)
+                 for var, value in zip(agent.context_vars, low_level_context)]
 
-  # never executes.
-  increment_reset_op = tf.cond(reset_env_cond, increment_reset, no_op_int)
-
-  # a group of tf.int64's
-  increment_op = tf.group(increment_step_op, increment_episode_op,
-                          increment_reset_op)
+    state_var_upd = tf.assign(starting_state, next_state)
+    meta_action_var_upd = tf.assign(meta_action_var, low_level_context)
+    
+    return tf.group(comp_train_op, state_var_upd, meta_action_var_upd *agent_context_upd)
   
-  # observe next state & repr
-  with tf.control_dependencies([increment_op, reward, discount]):
-    next_state = tf_env.current_obs()
-    next_state_repr = state_preprocess(next_state)
-    next_reset_episode_cond = tf.logical_or(
-        agent.reset_episode_cond_fn(
-            state, action,
-            transition_type, environment_steps, num_episodes),
-        tf.equal(discount, 0.0))
-
-  ls = [next_state] + context + meta_context
   
-  with tf.control_dependencies(ls):
-    if disable_agent_reset:
-      assert False # never executes
-      collect_experience_ops = [tf.no_op()]  # don't reset agent
-    else:
-      collect_experience_ops = agent.cond_begin_episode_op(
-          tf.logical_not(reset_episode_cond),
-          [state, starting_state, action, reward, next_state,
-           state_repr, starting_state_repr, next_state_repr],
-          mode='explore', meta_action_fn=meta_action_fn)
-      context_reward, meta_reward = collect_experience_ops
-      collect_experience_ops = list(collect_experience_ops) # convert tuple to list
-      collect_experience_ops.append(
-          update_episode_rewards(tf.reduce_sum(context_reward), meta_reward,
-                                 reset_episode_cond))
+  def walk():
+    action = action_fn(state, context=None) # a
 
-  meta_action_every_n = agent.tf_context.meta_action_every_n
-  
-  with tf.control_dependencies(collect_experience_ops):
-    transition = [state, starting_state, action, reward, discount, next_state] 
+    starting_state_repr = state_preprocess(starting_state)
 
-    meta_action = tf.to_float(
-        tf.concat(context, -1))  # Meta agent action is low-level context
+    with tf.control_dependencies([state]):
+      transition_type, reward, discount = tf_env.step(action)  # takes step and enters new state
 
-    meta_end = tf.logical_and(  # End of meta-transition.
-        tf.equal(agent.tf_context.t % meta_action_every_n, 1),
-        agent.tf_context.t > 1)
-    with tf.variable_scope(tf.get_variable_scope(), reuse=tf.AUTO_REUSE):
-      states_var = tf.get_variable('states_var',
-                                   [meta_action_every_n, state.shape[-1]],
-                                   state.dtype)
-      actions_var = tf.get_variable('actions_var',
-                                    [meta_action_every_n, action.shape[-1]],
-                                    action.dtype)
-      state_var = tf.get_variable('state_var', state.shape, state.dtype)
-      reward_var = tf.get_variable('reward_var', reward.shape, reward.dtype)
-      meta_action_var = tf.get_variable('meta_action_var',
-                                        meta_action.shape, meta_action.dtype)
-      meta_context_var = [
-          tf.get_variable('meta_context_var%d' % idx,
-                          meta_context[idx].shape, meta_context[idx].dtype)
-          for idx in range(len(meta_context))]
+    # tf.bool that tells if the transition_type is TRANSITION or FINAL_TRANSITION.
+    step_cond = agent.step_cond_fn(state, action,       
+                                   transition_type,
+                                   environment_steps, num_episodes)
 
-    actions_var_upd = tf.scatter_update(
-        actions_var, (agent.tf_context.t - 2) % meta_action_every_n, action)
-    with tf.control_dependencies([actions_var_upd]):
-      actions = tf.identity(actions_var) + tf.zeros_like(actions_var)
+    # tf.bool that tells if the transition_type is RESTARTING.
+    reset_episode_cond = agent.reset_episode_cond_fn(   
+        state, action,
+        transition_type, environment_steps, num_episodes)
+
+    # tf.bool that is always false
+    reset_env_cond = agent.reset_env_cond_fn(state, action,
+                                             transition_type,
+                                             environment_steps, num_episodes)
+
+    # if transition_type is TRANSITION or FINAL_TRANSITION, add one to environment_steps, otherwise do nothing.                               
+    increment_step_op = tf.cond(step_cond, increment_step, no_op_int)
+
+    # if transition_type is RESTARTING, add one to num_episodes, otherwise do nothing.                              
+    increment_episode_op = tf.cond(reset_episode_cond, increment_episode,
+                                   no_op_int)
+
+    # never executes.
+    increment_reset_op = tf.cond(reset_env_cond, increment_reset, no_op_int)
+
+    # a group of tf.int64's
+    increment_op = tf.group(increment_step_op, increment_episode_op,
+                            increment_reset_op)
+
+    # observe next state & repr
+    with tf.control_dependencies([increment_op, reward, discount]):
+      next_state = tf_env.current_obs()
+      next_state_repr = state_preprocess(next_state)
+      next_reset_episode_cond = tf.logical_or(
+          agent.reset_episode_cond_fn(
+              state, action,
+              transition_type, environment_steps, num_episodes),
+          tf.equal(discount, 0.0))
+
+    ls = [next_state] + context + meta_context
+
+    with tf.control_dependencies(ls):
+      if disable_agent_reset:
+        assert False # never executes
+        collect_experience_ops = [tf.no_op()]  # don't reset agent
+      else:
+        collect_experience_ops = agent.cond_begin_episode_op(
+            tf.logical_not(reset_episode_cond),
+            [state, starting_state, action, reward, next_state,
+             state_repr, starting_state_repr, next_state_repr],
+            mode='explore', meta_action_fn=meta_action_fn)
+        context_reward, meta_reward = collect_experience_ops
+        collect_experience_ops = list(collect_experience_ops) # convert tuple to list
+        collect_experience_ops.append(
+            update_episode_rewards(tf.reduce_sum(context_reward), meta_reward,
+                                   reset_episode_cond))
+
+    with tf.control_dependencies(collect_experience_ops):
+      transition = [state, starting_state, action, reward, discount, next_state] 
+
+      meta_action = tf.to_float(
+          tf.concat(context, -1))  # Meta agent action is low-level context
+
+      meta_end = tf.logical_and(  # End of meta-transition.
+          tf.equal(agent.tf_context.t % meta_action_every_n, 1),
+          agent.tf_context.t > 1)
+
+      with tf.variable_scope(tf.get_variable_scope(), reuse=tf.AUTO_REUSE):
+        state_var = tf.get_variable('state_var', state.shape, state.dtype)
+        reward_var = tf.get_variable('reward_var', reward.shape, reward.dtype)
+        meta_action_var = tf.get_variable('meta_action_var',
+                                          meta_action.shape, meta_action.dtype)
+        meta_context_var = [
+            tf.get_variable('meta_context_var%d' % idx,
+                            meta_context[idx].shape, meta_context[idx].dtype)
+            for idx in range(len(meta_context))]
+
+
       meta_reward = tf.identity(meta_reward) + tf.zeros_like(meta_reward)
       meta_reward = tf.reshape(meta_reward, reward.shape)
 
-    reward = 0.1 * meta_reward
-    meta_transition = [state_var, tf.constant(0), meta_action_var,
-                       reward_var + reward,
-                       discount * (1 - tf.to_float(next_reset_episode_cond)),
-                       next_state]
-    meta_transition.extend([states_var, actions])
-    if store_context:  # store current and next context into replay
-      transition += context + list(agent.context_vars)
-      meta_transition += meta_context_var + list(meta_agent.context_vars)
+      # scale down reward
+      reward = 0.1 * meta_reward
+      meta_transition = [state_var, meta_action_var]
+      mini_transition = [state_var, meta_action_var, next_state]
+      #meta_transition.extend([states_var, actions])
+      if store_context:  # store current and next context into replay
+        transition += context + list(agent.context_vars)
+        meta_transition += meta_context_var + list(meta_agent.context_vars)
 
-    meta_step_cond = tf.squeeze(tf.logical_and(step_cond, tf.logical_or(next_reset_episode_cond, meta_end)))
-    #TODO: update the short buffer under the condition of c steps completed 
-    collect_experience_op = tf.group(
-        replay_buffer.maybe_add(transition, step_cond),
-        meta_replay_buffer.maybe_add(meta_transition, meta_step_cond),
-    )
+      meta_step_cond = tf.squeeze(tf.logical_and(step_cond, tf.logical_or(next_reset_episode_cond, meta_end)))
+      collect_experience_op = tf.group(
+          replay_buffer.maybe_add(transition, step_cond),
+          meta_replay_buffer.maybe_add(meta_transition, meta_step_cond),
+          #meta_agent.mini_buffer.maybe_add(mini_transition, meta_step_cond),
+      )
 
-  with tf.control_dependencies([collect_experience_op]):
-    collect_experience_op = tf.cond(reset_env_cond,    # alwasy evals to false
-                                    tf_env.reset,
-                                    tf_env.current_time_step)
+    with tf.control_dependencies([collect_experience_op]):
+      collect_experience_op = tf.cond(reset_env_cond,    # alwasy evals to false
+                                      tf_env.reset,
+                                      tf_env.current_time_step)
+      meta_period = tf.equal(agent.tf_context.t % meta_action_every_n, 1)                                                               
+    
+    
+    
+    def train_comp():
+      comp_train_op = tf.constant(0.0)
+      
+      if meta_agent.mini_buffer.buffer_size == meta_agent.mini_buffer.get_num_tensors:
+        # use popped to optimize completion net
+        popped = tf.identity(meta_agent.mini_buffer._tensors[meta_agent.mini_buffer.get_position()])
+        target = popped[-1]  # [alpha, theta]
 
-    meta_period = tf.equal(agent.tf_context.t % meta_action_every_n, 1)
-    states_var_upd = tf.scatter_update(
-    states_var, (agent.tf_context.t - 1) % meta_action_every_n,
-        next_state)                                                               
+        comp_loss = meta_agent.completion_loss(state, meta_action, target)
+
+        comp_train_op = slim.learning.create_train_op(
+          comp_loss,
+          completion_optimizer, 
+          global_step=global_step,
+          update_ops=None,
+          summarize_gradients=summarize_gradients,
+          clip_gradient_norm=clip_gradient_norm,
+          variables_to_train=meta_agent.get_trainable_completion_vars(),)
+      
+      # experience for mini_buffer
+      buffer_push_op = meta_agent.mini_buffer.add(mini_transition)
+
+      with tf.control_dependencies([buffer_push_op]):
+        return comp_train_op
+    
+    def train_reward():
+      meta_reward_loss = meta_agent.reward_loss(state_var, meta_action_var, reward_var + reward, next_state),
+      tabvars = meta_agent.get_trainable_reward_vars()
+      reward_train_op = slim.learning.create_train_op(
+          meta_reward_loss[0],
+          reward_optimizer,
+          global_step=global_step,
+          update_ops=update_ops,
+          summarize_gradients=summarize_gradients,
+          clip_gradient_norm=clip_gradient_norm,
+          variables_to_train=tabvars,)
+      return reward_train_op
+
+    comp_train_op = tf.cond(meta_period, train_comp, lambda: tf.constant(0.0))
+
+       
+    reward_train_op = tf.cond(meta_period, train_reward, lambda: tf.constant(0.0))
+    
     state_var_upd = tf.assign(
         state_var,
         tf.cond(meta_period, lambda: next_state, lambda: state_var))
@@ -327,15 +383,21 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
                     lambda: meta_context_var[idx]))
         for idx in range(len(meta_context))]
 
-  return tf.group(
+    return tf.group(
       collect_experience_op,
-      states_var_upd,
       state_var_upd,
       reward_var_upd,
       meta_action_var_upd,
+      reward_train_op,
+      comp_train_op,
       *meta_context_var_upd)
 
-#TODO: relable s_t+c and reward
+
+  return walk()
+  #return tf.cond(tf.math.logical_and(confidence > c_min, is_new_goal), leap, walk) 
+  #TODO: change to not only walk
+
+
 def sample_best_meta_actions(state_reprs, next_state_reprs, prev_meta_actions,
                              low_states, low_actions, low_state_reprs,
                              inverse_dynamics, uvf_agent, k=10):
@@ -376,6 +438,8 @@ def train_uvf(train_dir,
               actor_optimizer=None,
               meta_critic_optimizer=None,
               meta_actor_optimizer=None,
+              reward_optimizer=None,
+              completion_optimizer=None,
               repr_optimizer=None,
               relabel_contexts=False,
               meta_relabel_contexts=False,
@@ -438,7 +502,7 @@ def train_uvf(train_dir,
         tf_env,
         debug_summaries=debug_summaries)
     meta_agent.set_replay(replay=meta_replay_buffer)
-    meta_agent.set_mini_replay(replay=mini_buffer)
+    meta_agent.set_mini_buffer(mini_buffer)
 
   with tf.variable_scope('uvf_agent'):
     uvf_agent = agent_class(
@@ -482,7 +546,7 @@ def train_uvf(train_dir,
                     tf.reduce_mean(episode_rewards[1:]))
   tf.summary.scalar('avg_episode_meta_rewards',
                     tf.reduce_mean(episode_meta_rewards[1:]))
-                    #TODO: leap num
+  tf.summary.scalar('num_leaps',num_leaps)
   tf.summary.histogram('episode_rewards', episode_rewards[1:])
   tf.summary.histogram('episode_meta_rewards', episode_meta_rewards[1:])
 
@@ -504,13 +568,22 @@ def train_uvf(train_dir,
       action_fn,
       meta_action_fn,
       environment_steps=global_step,
+      num_leaps=num_leaps,
       num_episodes=num_episodes,
       num_resets=num_resets,
       episode_rewards=episode_rewards,
       episode_meta_rewards=episode_meta_rewards,
       store_context=True,
       disable_agent_reset=False,
-      max_steps_per_episode = max_steps_per_episode
+      reward_optimizer=reward_optimizer,
+      completion_optimizer=completion_optimizer,
+      max_steps_per_episode = max_steps_per_episode,
+      global_step = num_meta_updates, 
+      update_ops = None, 
+      summarize_gradients = summarize_gradients,
+      clip_gradient_norm = clip_gradient_norm, 
+      c_min = 0.75
+
   )
 
   # Create train ops
@@ -524,18 +597,26 @@ def train_uvf(train_dir,
       action_fn,
       meta_action_fn,
       environment_steps=global_step,
+      num_leaps=num_leaps,
       num_episodes=num_episodes,
       num_resets=num_resets,
       episode_rewards=episode_rewards,
       episode_meta_rewards=episode_meta_rewards,
       store_context=True,
       disable_agent_reset=False,
-      max_steps_per_episode = max_steps_per_episode
+      reward_optimizer=reward_optimizer,
+      completion_optimizer=completion_optimizer,
+      max_steps_per_episode = max_steps_per_episode,
+      global_step = num_meta_updates, 
+      update_ops = None, 
+      summarize_gradients = summarize_gradients,
+      clip_gradient_norm = clip_gradient_norm, 
+      c_min = 0.75
   )
 
   train_op_list = []
   repr_train_op = tf.constant(0.0)
-  for mode in ['meta', 'nometa']:#TODO:update network reward and completion in the mode of meta
+  for mode in ['meta', 'nometa']:
     if mode == 'meta':
       agent = meta_agent
       buff = meta_replay_buffer
@@ -556,21 +637,23 @@ def train_uvf(train_dir,
       n_updates = num_updates
 
     with tf.name_scope(mode):
-      batch = buff.get_random_batch(batch_size, num_steps=num_steps) 
-      states, actions, rewards, _, next_states = batch[:5]      
-      if mode == 'meta':
+      batch = buff.get_random_batch(batch_size, num_steps=num_steps)
+      if mode == 'nometa': 
+        states, actions, rewards, next_states = batch[:4]      
+      else:
+        states, actions = batch[:2]
         # relabel next_state
         # relabel reward 
-        # TODO: is the dimension correct? note that this is a batch of tensors
-        (alphas, thetas) = meta_agent.completion(states, actions)
+        ret = meta_agent.completion(states, actions)
+        alphas = ret[0]
+        thetas = ret[1]
         next_states = meta_agent.compute_next_state(states, actions, alphas, thetas)
         rewards = meta_agent.reward_net(states)       
-      # TODO: summarize rewards
       with tf.name_scope('Reward'):
         tf.summary.scalar('average_step_reward', tf.reduce_mean(rewards))
       rewards *= reward_scale_factor
       batch_queue = slim.prefetch_queue.prefetch_queue(
-          [states, actions, rewards, next_states] + batch[5:],
+          [states, actions, rewards, next_states] + batch[4:],
           capacity=prefetch_queue_capacity,
           name='batch_queue')  
 
@@ -581,14 +664,14 @@ def train_uvf(train_dir,
             for batch in batch_dequeue
         ]
         batch_size *= (repeat_size + 1)
-      states, actions, rewards, discounts, next_states = batch_dequeue[:5]
+      states, actions, rewards, next_states = batch_dequeue[:4]
       if mode == 'meta':
         low_states = batch_dequeue[6]
         low_actions = batch_dequeue[7]
         low_state_reprs = state_preprocess(low_states)
       state_reprs = state_preprocess(states)
       next_state_reprs = state_preprocess(next_states)
-      starting_states_reprs = state_preprocess(starting_states)
+      #starting_states_reprs = state_preprocess(starting_states) TODO: starting_state
 
       # DELETED: meta-action relabel
 
@@ -627,10 +710,10 @@ def train_uvf(train_dir,
       # When computing reward for nometa, use repr_state_dim=15
       if mode == 'nometa':
         context_rewards, context_discounts = agent.compute_rewards(
-            'train', state_reprs, starting_states_reprs, actions, rewards,next_state_reprs, contexts)
+            'train', state_reprs, None, actions, rewards,next_state_reprs, contexts)
       elif mode == 'meta': # Meta-agent uses sum of rewards, not context-specific rewards.
         _, context_discounts = agent.compute_rewards(
-            'train', states, starting_states, actions, rewards, next_states, contexts)
+            'train', states, None, actions, rewards, next_states, contexts)
         context_rewards = rewards # does not use returned rewards
       
       if agent.gamma_index is not None:

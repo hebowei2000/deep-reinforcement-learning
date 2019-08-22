@@ -42,7 +42,8 @@ def reward_net(states, actions,
       weights_regularizer=slim.l2_regularizer(weight_decay),
       weights_initializer=slim.variance_scaling_initializer(
           factor=1.0/3.0, mode='FAN_IN', uniform=True)):
-
+    states=[states]
+    actions=[actions]
     orig_states = tf.to_float(states)
     #states = tf.to_float(states)
     states = tf.concat([tf.to_float(states), tf.to_float(actions)], -1)  #TD3
@@ -108,6 +109,8 @@ def completion_net(states, actions,
       [batch_size, num_reward_dims] tensor of vector q values if
       num_reward_dims > 1.
   """
+  #states=[states]
+  #actions=[actions]
   with slim.arg_scope(
       [slim.fully_connected],
       activation_fn=activation_fn,
@@ -140,6 +143,6 @@ def completion_net(states, actions,
                                    activation_fn=None,
                                    normalizer_fn=None,
                                    scope='completion')
-  return tf.reshape(value, [2])
+  return value#tf.reshape(value, [1,2])
 
 

@@ -57,9 +57,6 @@ class CircularBuffer(object):
   def scope(self):
     return self._scope
 
-  def get_counter(self):
-    return self.counter
-
   @property
   def num_adds(self):
     return self._num_adds
@@ -277,7 +274,7 @@ class CircularBuffer(object):
                    lambda: self.get_num_adds() - 1,
                    lambda: tf.mod(self.get_num_adds() - 1, self._buffer_size))
 
-  def get_num_adds(self):
+  def get_num_adds(self): # TODO: refactor
     """Returns the number of additions to the buffer.
 
     Returns:

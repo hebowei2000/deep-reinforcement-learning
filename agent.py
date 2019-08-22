@@ -45,6 +45,7 @@ class UvfAgentCore(object):
                step_cond_fn=cond_fn.env_transition,
                reset_episode_cond_fn=cond_fn.env_restart,
                reset_env_cond_fn=cond_fn.false_fn,
+               every_n_steps=cond_fn.every_n_steps,
                metrics=None,
                **base_agent_kwargs):
     """Constructs a UVF agent.
@@ -67,6 +68,7 @@ class UvfAgentCore(object):
     self._step_cond_fn = step_cond_fn
     self._reset_episode_cond_fn = reset_episode_cond_fn
     self._reset_env_cond_fn = reset_env_cond_fn
+    self._every_n_steps = every_n_steps
     self.metrics = metrics
 
     # expose tf_context methods
@@ -576,6 +578,31 @@ class MetaAgentCore(UvfAgentCore):
     return regularizer + loss
 
   
+  
+
+@gin.configurable
+class UvfAgent(UvfAgentCore, ddpg_agent.TD3Agent):
+  """A DDPG agent with UVF.
+  """
+  BASE_AGENT_CLASS = ddpg_agent.TD3Agent
+  ACTION_TYPE = 'continuous'
+
+  def __init__(self, *args, **kwargs):
+    UvfAgentCore.__init__(self, *args, **kwargs)
+
+
+@gin.configurable
+class MetaAgent(MetaAgentCore, ddpg_agent.TD3Agent):
+  """A DDPG meta-agent.
+  """
+  BASE_AGENT_CLASS = ddpg_agent.TD3Agent
+  ACTION_TYPE = 'continuous'
+
+  def __init__(self, *args, **kwargs):
+    MetaAgentCore.__init__(self, *args, **kwargs)
+    #self._scope = tf.get_variable_scope().name
+
+
   def compute_next_state(self, state, meta_action, alpha, theta):
       """
       Given state and meta-action, computes the predicted next_state
@@ -598,11 +625,10 @@ class MetaAgentCore(UvfAgentCore):
 
   def reward_net(self, states, meta_actions, next_states):
       """Returns the states that gives the highest Q value."""
-      self._validate_states(states)
-      return self._reward_net(states, meta_actions)  # TODO: representation?
+      #self._validate_states(states)
+      return self._reward_net(states, meta_actions)[0]  # TODO: representation?
   
-  def reward_loss(self, states, meta_actions, rewards, discounts,
-                next_states):
+  def reward_loss(self, states, meta_actions, rewards, next_states):
       """Returns a 0-rank tensor representing the loss function for the critic net. """
       target = rewards
       predicted_val = self.reward_net(states, meta_actions, next_states)
@@ -610,62 +636,64 @@ class MetaAgentCore(UvfAgentCore):
 
   def completion(self, states, meta_actions):
       """Returns the output of the completion network """
-      self._validate_states(states)
-      super(MetaAgentCore, self)._validate_actions(meta_actions) #TODO FIXME
+      #self._validate_states(states)
+      super()._validate_actions(meta_actions) 
       return self._completion_net(states, meta_actions)  # =(alpha, theta)
 
 
-  def completion_loss(self, states, meta_actions, next_states):
+  def completion_loss(self, states, meta_actions, target):
       """Returns a 0-rank tensor representing the loss function for the actor net."""
       # TODO: representation?
-      self._validate_states(states) 
+      #self._validate_states(states) 
       predicted_val = self.completion(states, meta_actions)
-      target = self.inv_completion(states, meta_actions, next_states)
-      return self._td_errors_loss(predicted_val, target)  
+      #target = self.inv_completion(states, meta_actions, next_states)
+      return self._td_errors_loss(predicted_val, target)[0]
   
   def confidence(self, state, goal):
-      num_tensors = self.mini_buffer.get_num_tensors()
-      conf = 0
-      if num_tensors :
-        batch = self.mini_buffer.get_random_batch(num_tensors)
+      num_exps = self.mini_buffer.get_num_tensors() // 3
+      conf = tf.constant(0.0)  #TODO: change to tf.constant(0)
+      def compute_conf():
+        batch = self.mini_buffer.get_random_batch(num_exps)
         [states, meta_actions, next_states] = batch
         [predicted_alphas, predicted_thetas] = self.completion(states, meta_actions)
         [actual_alphas, actual_thetas] = self.inv_completion(states, meta_actions, next_states)
-        for i in range(num_tensors):
+        for i in range(num_exps):
           batch[i].append([predicted_alphas, predicted_thetas])
           batch[i].append([actual_alphas, actual_thetas])
           batch[i].append(tf.norm(states[i] - state, ord=2))
         sorted_batch = tf.sort(batch)  # sorts according to last axis
-        weight_base = (num_tensors + num_tensors ** 2) / 2 
-        for i in range(num_tensors):
+        weight_base = (num_exps + num_exps ** 2) / 2 
+        for i in range(num_exps):
           [predicted_alpha, predicted_theta] = sorted_batch[i][-3]
           [actual_alpha, actual_theta] = sorted_batch[i][-2]
-          conf += (tf.abs(predicted_alpha - actual_alpha) + 
-              tf.abs(predicted_theta - actual_theta)) / weight_base * i
+          conf += (tf.square(predicted_alpha - actual_alpha) + 
+              tf.square(predicted_theta - actual_theta)) / weight_base * i
 
+        return conf
+
+      if num_exps > 0:
+        return compute_conf
       return conf
+      #return tf.cond(num_exps > 0, compute_conf, lambda: conf)
+ 
+        
+  def get_trainable_reward_vars(self):
+    """Returns a list of trainable variables in the critic network.
 
+    Returns:
+      A list of trainable variables in the critic network.
+    """
+    return slim.get_trainable_variables(
+        uvf_utils.join_scope(self._scope, self.REWARD_NET_SCOPE))
 
-@gin.configurable
-class UvfAgent(UvfAgentCore, ddpg_agent.TD3Agent):
-  """A DDPG agent with UVF.
-  """
-  BASE_AGENT_CLASS = ddpg_agent.TD3Agent
-  ACTION_TYPE = 'continuous'
+  def get_trainable_completion_vars(self):
+    """Returns a list of trainable variables in the critic network.
 
-  def __init__(self, *args, **kwargs):
-    UvfAgentCore.__init__(self, *args, **kwargs)
-
-
-@gin.configurable
-class MetaAgent(MetaAgentCore, ddpg_agent.TD3Agent):
-  """A DDPG meta-agent.
-  """
-  BASE_AGENT_CLASS = ddpg_agent.TD3Agent
-  ACTION_TYPE = 'continuous'
-
-  def __init__(self, *args, **kwargs):
-    MetaAgentCore.__init__(self, *args, **kwargs)
+    Returns:
+      A list of trainable variables in the critic network.
+    """
+    return slim.get_trainable_variables(
+        uvf_utils.join_scope(self._scope, self.COMPLETION_NET_SCOPE))
 
 
 @gin.configurable()

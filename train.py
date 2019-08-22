@@ -144,10 +144,7 @@ def collect_experience(tf_env, agent, meta_agent, state_preprocess,
     ep_upd = agent._every_n_steps(None, None, None, None, environment_steps, None) 
     #meta_action_var = meta_action
     # predict completion and compute next_state
-    ret = tf.reduce_sum(meta_agent.completion(tf.expand_dims(state, 0), 
-                      tf.expand_dims(meta_action_var, 0)),0) 
-    alpha = ret[0]
-    theta = ret[1]
+    
     next_state = meta_agent.compute_next_state(state, meta_action_var, alpha, theta)
     
     increment_step_op = tf.cond(ep_upd, increment_many_steps, no_op_int)
